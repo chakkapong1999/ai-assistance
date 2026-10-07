@@ -77,3 +77,23 @@ curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/overview
 - Viewer tokens never see `users.email`; writes need an admin token.
 - With `docker compose`, `API_TOKENS` defaults to `dev-admin-token-change-me:admin` and the frontend gets the same value as `API_TOKEN`. Change both for anything but local use.
 - **This authenticates the dashboard server, not the people using it.** Anyone who can open the dashboard can do what its token can. End-user login (for example Bitbucket OAuth) is not built yet; until then keep the dashboard on a trusted network.
+
+## Dashboard (`frontend/`)
+
+Next.js (server components, no client-side data fetching): the browser only receives HTML; the server reads the REST API with `API_TOKEN`.
+
+| Page | Shows |
+| --- | --- |
+| `/` Overview | commits, average score, review cost and tokens, queue, findings by severity, per-day charts (7 / 30 / 90 days) |
+| `/commits` | every commit, newest first, filter by text, repository, status, branch, author; older pages via cursor |
+| `/commits/{id}` | latest review: summary, findings by severity, suggested changes as diffs, tokens and cost of the run; **Review again** (admin token) |
+| `/repositories` | per-repository numbers and the **review on/off** switch (admin token) |
+| `/people`, `/users/{id}` | commits, average score, findings per author, weekly trend |
+
+```bash
+cd frontend && cp .env.example .env.local   # API_BASE_URL, API_TOKEN (one of the API's API_TOKENS), DISPLAY_TZ
+npm ci && npm run dev
+```
+
+A viewer token makes the whole dashboard read-only (the buttons disappear and e-mails are hidden); an admin token enables the two actions.
+Remember that **anyone who can open the dashboard acts with its token** - there is no per-user login yet.
