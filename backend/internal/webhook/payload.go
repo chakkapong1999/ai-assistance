@@ -32,11 +32,30 @@ type PushEvent struct {
 }
 
 type Repository struct {
-	UUID      string     `json:"uuid"`
-	Name      string     `json:"name"`
-	FullName  string     `json:"full_name"`
-	Project   *Project   `json:"project"`
-	Workspace *Workspace `json:"workspace"`
+	UUID       string     `json:"uuid"`
+	Name       string     `json:"name"`
+	FullName   string     `json:"full_name"`
+	Project    *Project   `json:"project"`
+	Workspace  *Workspace `json:"workspace"`
+	MainBranch *struct {
+		Name string `json:"name"`
+	} `json:"mainbranch"`
+}
+
+// Slug is the repository slug: the part of full_name after "workspace/".
+func (r Repository) Slug() string {
+	if i := strings.LastIndex(r.FullName, "/"); i >= 0 {
+		return r.FullName[i+1:]
+	}
+	return r.Name
+}
+
+// DefaultBranch returns the main branch name when the payload carries it.
+func (r Repository) DefaultBranch() string {
+	if r.MainBranch == nil {
+		return ""
+	}
+	return r.MainBranch.Name
 }
 
 type Project struct {
