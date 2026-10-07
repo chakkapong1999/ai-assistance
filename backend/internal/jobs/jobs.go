@@ -2,7 +2,10 @@
 // enqueues) and the worker (which runs them).
 package jobs
 
-import "github.com/riverqueue/river"
+import (
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
+)
 
 // Queues. Webhook processing is cheap and may run in parallel; reviews are
 // serialised (MaxWorkers 1 in the worker) because they use a local LLM CLI.
@@ -40,5 +43,27 @@ func (ReviewCommitArgs) InsertOpts() river.InsertOpts {
 		MaxAttempts: maxAttempts,
 		// A commit is never queued twice while a job for it is still pending.
 		UniqueOpts: river.UniqueOpts{ByArgs: true},
+	}
+}
+
+// PollReposArgs runs one polling round over the configured repositories. It
+// is inserted on a timer by the worker; the uniqueness below (counting only
+// jobs that are still waiting or running, not finished ones) means a round
+// that is still running is never doubled up.
+type PollReposArgs struct{}
+
+func (PollReposArgs) Kind() string { return "poll_repos" }
+
+func (PollReposArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		Queue:       QueueDefault,
+		MaxAttempts: 3,
+		UniqueOpts: river.UniqueOpts{
+			ByArgs: true,
+			ByState: []rivertype.JobState{
+				rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRunning,
+				rivertype.JobStateRetryable, rivertype.JobStateScheduled,
+			},
+		},
 	}
 }

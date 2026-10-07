@@ -37,6 +37,7 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	for _, c := range []struct{ table, hint string }{
 		{"webhook_events", "run `make migrate`"},
+		{"poll_cursors", "run `make migrate` (migration 0002)"},
 		{"river_job", "run `make migrate-river`"},
 	} {
 		var found *string

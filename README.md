@@ -97,3 +97,20 @@ npm ci && npm run dev
 
 A viewer token makes the whole dashboard read-only (the buttons disappear and e-mails are hidden); an admin token enables the two actions.
 Remember that **anyone who can open the dashboard acts with its token** - there is no per-user login yet.
+
+## Polling instead of (or besides) webhooks
+
+If you cannot register a webhook, the worker can look for new commits itself:
+
+```bash
+POLL_REPOS='acme/api,acme/web'   # or 'acme/*' for every repository of a workspace the token can see
+POLL_INTERVAL=5m                 # min 1m
+POLL_LOOKBACK=168h               # how far back the FIRST poll of a branch reads
+```
+
+- Each round, per repository: read the branch list; for every branch whose head moved since the last round, read only the commits after the last synced head. A branch that did not move costs no commits request.
+- Commits go through the same path as webhook commits: stored once (de-duplicated by hash, so polling and webhooks can run together), skipped when review is off for the repository or for merge commits, otherwise queued for review.
+- Commits and the "where I got to" cursor (`poll_cursors`) are saved in one transaction, so a failed round is simply repeated. A Bitbucket rate limit pauses the round; one repository that cannot be read is logged and does not stop the others.
+- The first poll of a branch reads at most `POLL_LOOKBACK` (and 500 commits); a new branch only counts what the main branch does not have. Review is off for new repositories, so those commits are stored as *skipped* and are not reviewed if you switch review on later. Switch it on first, or use a short lookback, if you want them reviewed.
+- Requires migration 0002 (`make migrate`). Needs the same access token as reviewing (`Repositories: Read`).
+- Try it without Bitbucket: `go run ./cmd/mockbitbucket -repo acme/demo`, run the worker with `BITBUCKET_BASE_URL=http://localhost:7990 POLL_REPOS=acme/demo POLL_INTERVAL=1m`, then add a commit with `curl -X POST 'localhost:7990/_mock/commit?repo=acme/demo&branch=main&message=hello'`.

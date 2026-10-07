@@ -171,3 +171,40 @@ func TestAPITokens(t *testing.T) {
 		}
 	}
 }
+
+func TestPollConfig(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t"}
+	load := func(extra map[string]string) (Config, error) {
+		e := map[string]string{}
+		for k, v := range base {
+			e[k] = v
+		}
+		for k, v := range extra {
+			e[k] = v
+		}
+		return Load(ModeWorker, env(e))
+	}
+
+	c, err := load(nil)
+	if err != nil || len(c.PollRepos) != 0 || c.PollInterval != 5*time.Minute || c.PollLookback != 168*time.Hour {
+		t.Fatalf("defaults: %+v %v", c, err)
+	}
+	c, err = load(map[string]string{"POLL_REPOS": " acme/api, acme/*,acme/api ,my-ws/web.app", "POLL_INTERVAL": "90s", "POLL_LOOKBACK": "24h"})
+	if err != nil || len(c.PollRepos) != 3 || c.PollRepos[1] != "acme/*" || c.PollInterval != 90*time.Second || c.PollLookback != 24*time.Hour {
+		t.Fatalf("parsed: %+v %v", c, err)
+	}
+	for name, e := range map[string]map[string]string{
+		"no slash":        {"POLL_REPOS": "acme"},
+		"star workspace":  {"POLL_REPOS": "*/api"},
+		"path traversal":  {"POLL_REPOS": "acme/../x"},
+		"extra segment":   {"POLL_REPOS": "acme/api/x"},
+		"bad interval":    {"POLL_INTERVAL": "often"},
+		"interval < 1m":   {"POLL_INTERVAL": "10s"},
+		"lookback < 1h":   {"POLL_LOOKBACK": "5m"},
+		"days not a unit": {"POLL_LOOKBACK": "7d"},
+	} {
+		if _, err := load(e); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+}

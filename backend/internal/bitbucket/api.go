@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/chakkapong1999/ai-assistance/backend/internal/webhook"
 )
@@ -85,6 +86,99 @@ func (c *Client) ListCommits(ctx context.Context, workspace, repo, include, excl
 		q.Set("exclude", exclude)
 	}
 	return getAll[Commit](ctx, c, c.endpoint("repositories", workspace, repo, "commits")+"?"+q.Encode())
+}
+
+// Repository is what Bitbucket returns for a repository; it is the same shape
+// as the repository object inside a push webhook, so it feeds the same sync.
+type Repository = webhook.Repository
+
+// Branch is a branch and the commit it points at.
+type Branch struct {
+	Name string `json:"name"`
+	Head struct {
+		Hash string `json:"hash"`
+	} `json:"target"`
+}
+
+// GetRepository returns a repository's identity: uuid, project, workspace and
+// main branch.
+func (c *Client) GetRepository(ctx context.Context, workspace, repo string) (Repository, error) {
+	var r Repository
+	if err := need(map[string]string{"workspace": workspace, "repo": repo}); err != nil {
+		return r, err
+	}
+	b, err := c.get(ctx, c.endpoint("repositories", workspace, repo))
+	if err != nil {
+		return r, err
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return r, fmt.Errorf("bitbucket: decoding repository: %w", err)
+	}
+	if r.UUID == "" {
+		return r, fmt.Errorf("bitbucket: repository %s/%s has no uuid in the response", workspace, repo)
+	}
+	return r, nil
+}
+
+// ListWorkspaceRepositories returns every repository the token can see in a workspace.
+func (c *Client) ListWorkspaceRepositories(ctx context.Context, workspace string) ([]Repository, error) {
+	if err := need(map[string]string{"workspace": workspace}); err != nil {
+		return nil, err
+	}
+	return getAll[Repository](ctx, c, c.endpoint("repositories", workspace)+"?pagelen=100")
+}
+
+// ListBranches returns all branches of a repository with their head commits.
+func (c *Client) ListBranches(ctx context.Context, workspace, repo string) ([]Branch, error) {
+	if err := need(map[string]string{"workspace": workspace, "repo": repo}); err != nil {
+		return nil, err
+	}
+	return getAll[Branch](ctx, c, c.endpoint("repositories", workspace, repo, "refs", "branches")+"?pagelen=100")
+}
+
+// ListRecentCommits is ListCommits for a repository whose history may be long:
+// it reads newest-first pages only until it has `max` commits or reaches one
+// committed before `since` (zero = no date limit), instead of the whole history.
+func (c *Client) ListRecentCommits(ctx context.Context, workspace, repo, include, exclude string, since time.Time, max int) ([]Commit, error) {
+	if err := need(map[string]string{"workspace": workspace, "repo": repo}); err != nil {
+		return nil, err
+	}
+	q := url.Values{"pagelen": {"100"}}
+	if include != "" {
+		q.Set("include", include)
+	}
+	if exclude != "" {
+		q.Set("exclude", exclude)
+	}
+	var out []Commit
+	next := c.endpoint("repositories", workspace, repo, "commits") + "?" + q.Encode()
+	for i := 0; next != ""; i++ {
+		if i >= maxPages {
+			return nil, fmt.Errorf("bitbucket: more than %d pages, giving up", maxPages)
+		}
+		if err := c.sameOrigin(next); err != nil {
+			return nil, err
+		}
+		b, err := c.get(ctx, next)
+		if err != nil {
+			return nil, err
+		}
+		var p page[Commit]
+		if err := json.Unmarshal(b, &p); err != nil {
+			return nil, fmt.Errorf("bitbucket: decoding commits page %d: %w", i+1, err)
+		}
+		for _, cm := range p.Values {
+			if !since.IsZero() && !cm.Date.IsZero() && cm.Date.Before(since) {
+				return out, nil
+			}
+			out = append(out, cm)
+			if max > 0 && len(out) >= max {
+				return out, nil
+			}
+		}
+		next = p.Next
+	}
+	return out, nil
 }
 
 // ListWorkspacePermissions returns the role of every member of a workspace.
