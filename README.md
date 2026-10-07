@@ -134,4 +134,8 @@ Besides each commit, the worker reviews every **open pull request as one diff** 
 - **Closed pull requests:** a pull request that was open and no longer is gets one lookup, so its state (merged, declined, `DELETED` when Bitbucket no longer knows it) stays right. It keeps its last review and is not reviewed again.
 - **Cost:** a pull request is reviewed once per push, so a busy branch costs more than its commits alone would. Runs are counted in the overview's usage and cost like any other review. Reviews of the same pull request are one at a time, in the same queue as commit reviews.
 - Requires migration 0003 (`make migrate`); the API and worker refuse to start without it. The access token also needs **Pull requests: Read** (Bitbucket scope `pullrequest`); without it the pull request step fails for each repository (logged) while commit polling keeps working. Not verified against real Bitbucket: the response shapes follow the public API docs and the mock.
+
+### Code next to each finding (migration 0004)
+
+From migration 0004 each finding stores the diff hunk it is about (`code_context`), and the dashboard shows it as a diff, unified or split, with the finding's lines marked and the suggested change underneath. Reviews made before the migration have no stored code: they show the explanation and the suggestion diff only, until the commit or pull request is reviewed again. The API and worker refuse to start until `make migrate` has run.
 - Try it without Bitbucket: with the mock above, `curl -X POST 'localhost:7990/_mock/pullrequest?repo=acme/demo&source=feature/x&title=Add+x'` (the branch needs a commit first), push more commits to the branch, and `...&id=1&state=MERGED` to merge it.

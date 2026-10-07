@@ -2,10 +2,10 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { ago, num, one } from "@/lib/format";
-import { ScoreBadge } from "@/components/badges";
+import ScoreMeter from "@/components/ScoreMeter";
 import { toggleReview } from "./actions";
 
-export const dynamic = "force-dynamic";
+export const metadata = { title: "Repositories" };
 
 export default async function Repositories({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
@@ -18,75 +18,68 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <h1>Repositories</h1>
-      <p className="sub">
-        Repositories appear when Bitbucket first sends a push. Review is <strong>off</strong> until you turn it on, because enabling it sends that repository&apos;s code to an LLM.
-      </p>
+      <div className="head">
+        <div>
+          <h1>Repositories</h1>
+          <p>
+            {enabled} of {list.total} are reviewed. Turning review on sends that repository&apos;s code to the reviewer. Turning it off keeps past reviews, and commits pushed while it is off are
+            skipped for good.
+          </p>
+        </div>
+      </div>
       {notice ? (
         <p className="banner" role="status">
           {notice}
         </p>
       ) : null}
-      <form className="filters" action="/repositories">
+      <form className="toolbar" action="/repositories">
         <label>
           Search
-          <input name="q" defaultValue={q} placeholder="workspace/repo" />
+          <input type="search" name="q" defaultValue={q} placeholder="workspace/repo" />
         </label>
         <button className="primary">Search</button>
-        {q ? <Link href="/repositories">Reset</Link> : null}
+        {q ? <Link href="/repositories">Clear search</Link> : null}
       </form>
 
       {list.items.length === 0 ? (
-        <div className="empty">{q ? "No repository matches." : "No repositories yet. They are created from the first push webhook."}</div>
-      ) : (
-        <div className="tablewrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Repository</th>
-                <th>Project</th>
-                <th className="num">Commits</th>
-                <th className="num">Reviewed</th>
-                <th className="num">Avg score</th>
-                <th>Last commit</th>
-                <th>Review</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.items.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    <Link href={`/commits?repo_id=${r.id}`}>{r.full_name}</Link>
-                    <div className="muted">{[r.main_language, r.default_branch].filter(Boolean).join(" · ")}</div>
-                  </td>
-                  <td>{r.project_key === "NONE" ? <span className="muted">–</span> : r.project_name}</td>
-                  <td className="num">{num(r.commits)}</td>
-                  <td className="num">{num(r.reviewed)}</td>
-                  <td className="num">
-                    <ScoreBadge value={r.avg_score} />
-                  </td>
-                  <td>{ago(r.last_commit_at)}</td>
-                  <td>
-                    {admin ? (
-                      <form action={toggleReview} className="row" style={{ gap: 8 }}>
-                        <input type="hidden" name="id" value={r.id} />
-                        <input type="hidden" name="enable" value={String(!r.review_enabled)} />
-                        <span className={`badge ${r.review_enabled ? "good" : ""}`}>{r.review_enabled ? "on" : "off"}</span>
-                        <button className={r.review_enabled ? "danger" : "primary"}>{r.review_enabled ? "Turn off" : "Turn on"}</button>
-                      </form>
-                    ) : (
-                      <span className={`badge ${r.review_enabled ? "good" : ""}`}>{r.review_enabled ? "on" : "off"}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="empty">
+          <strong>{q ? "No repository matches" : "No repositories yet"}</strong>
+          {q ? "Try a shorter search." : "Repositories are created when Bitbucket first sends a push or the poller finds them."}
         </div>
+      ) : (
+        <ul className="rows">
+          {list.items.map((r) => (
+            <li key={r.id} className="item cols-repo">
+              <ScoreMeter value={r.avg_score} />
+              <div>
+                <Link href={`/commits?repo_id=${r.id}`} className="title">
+                  {r.full_name}
+                </Link>
+                <div className="meta">{[r.project_key === "NONE" ? null : r.project_name, r.main_language, r.default_branch].filter(Boolean).join(" · ") || "No details yet"}</div>
+              </div>
+              <div className="side r">
+                {num(r.reviewed)} of {num(r.commits)}
+                <div className="muted" style={{ fontSize: ".8rem" }}>
+                  commits reviewed
+                </div>
+              </div>
+              <time className="r">{r.last_commit_at ? ago(r.last_commit_at) : "No commits"}</time>
+              <div className="r">
+                {admin ? (
+                  <form action={toggleReview} style={{ display: "inline-flex", gap: 10, alignItems: "center" }}>
+                    <input type="hidden" name="id" value={r.id} />
+                    <input type="hidden" name="enable" value={String(!r.review_enabled)} />
+                    <span className={`mark ${r.review_enabled ? "good" : "idle"}`}>{r.review_enabled ? "Review on" : "Review off"}</span>
+                    <button className={r.review_enabled ? "quiet-danger" : "primary"}>{r.review_enabled ? "Turn off" : "Turn on"}</button>
+                  </form>
+                ) : (
+                  <span className={`mark ${r.review_enabled ? "good" : "idle"}`}>{r.review_enabled ? "Review on" : "Review off"}</span>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
-      <p className="muted">
-        {enabled} of {list.total} repositories are reviewed. Turning review off keeps past reviews; commits pushed while it is off are marked skipped and are not reviewed later.
-      </p>
     </>
   );
 }

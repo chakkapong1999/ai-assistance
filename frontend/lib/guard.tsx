@@ -11,7 +11,7 @@ export async function guard<T>(p: Promise<T>): Promise<[T, null] | [null, ReactN
     if (e instanceof ApiError) {
       if (e.status === 404) notFound();
       const hint = e.code === "unauthorized" ? " Check that API_TOKEN matches one of the API's API_TOKENS." : "";
-      return [null, <div key="problem" className="banner" role="alert"><strong>Cannot load data.</strong> {e.message}{hint}</div>];
+      return [null, <div key="problem" className="banner bad" role="alert"><strong>Cannot load data.</strong> {e.message}{hint}</div>];
     }
     throw e;
   }
