@@ -1,0 +1,55 @@
+# Local stack. Reviews default to the mock reviewer; the worker never calls an LLM here.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: aicr
+      POSTGRES_PASSWORD: aicr
+      POSTGRES_DB: aicr
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aicr -d aicr"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend-api:
+    build: ./backend
+    command: ["--mode=api"]
+    environment:
+      DATABASE_URL: postgres://aicr:aicr@postgres:5432/aicr?sslmode=disable
+      BITBUCKET_WEBHOOK_SECRET: ${BITBUCKET_WEBHOOK_SECRET:-dev-secret}
+      REVIEWER_MODE: mock
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend-worker:
+    build: ./backend
+    command: ["--mode=worker"]
+    environment:
+      DATABASE_URL: postgres://aicr:aicr@postgres:5432/aicr?sslmode=disable
+      BITBUCKET_TOKEN: ${BITBUCKET_TOKEN:-dev-token}
+      REVIEWER_MODE: ${REVIEWER_MODE:-mock}
+      MOCK_REVIEW_SCENARIO: ${MOCK_REVIEW_SCENARIO:-findings}
+      MOCK_REVIEW_DELAY: ${MOCK_REVIEW_DELAY:-2s}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    environment:
+      API_BASE_URL: http://backend-api:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend-api
+
+volumes:
+  pgdata:
