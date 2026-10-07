@@ -8,3 +8,4 @@ backend/bin/
 coverage.out
 next-env.d.ts
 *.tsbuildinfo
+.superdesign/tmp/

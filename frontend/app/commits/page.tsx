@@ -27,11 +27,9 @@ export default async function Commits({ searchParams }: { searchParams: Promise<
   return (
     <>
       <div className="head">
-        <div>
-          <h1>Commits</h1>
-          <p>Every branch, newest first. Open a commit to read the review next to the code.</p>
-        </div>
+        <h1>Commits</h1>
       </div>
+      <p className="intro">Every branch, newest first. Open a commit to read the review next to the code.</p>
 
       <form className="toolbar" action="/commits">
         <Segments
@@ -90,6 +88,13 @@ export default async function Commits({ searchParams }: { searchParams: Promise<
         </div>
       ) : (
         <ul className="rows">
+          <li className="item hd cols-review" aria-hidden="true">
+            <span>Score</span>
+            <span>Commit</span>
+            <span>Review</span>
+            <span className="r">Findings</span>
+            <span className="r">When</span>
+          </li>
           {list.items.map((c) => (
             <li key={c.id} className="item cols-review">
               <ScoreMeter value={c.score} />

@@ -27,7 +27,7 @@ const state: Record<PullRequestState, { tone: string; label: string }> = {
 
 export function PRStateBadge({ state: s }: { state: PullRequestState }) {
   const { tone, label } = state[s];
-  return <span className={`mark ${tone}`}>{label}</span>;
+  return <span className={`pill ${tone}`}>{label}</span>;
 }
 
 export function SeverityMark({ severity }: { severity: Severity }) {

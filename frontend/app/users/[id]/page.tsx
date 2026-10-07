@@ -20,26 +20,36 @@ export default async function UserPage({ params, searchParams }: { params: Promi
 
   return (
     <>
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <Link href="/users">People</Link>
-      </nav>
       <div className="head">
-        <div>
-          <h1>{u.display_name}</h1>
-          <p>{[u.job_title, u.department, u.email].filter(Boolean).join(" · ") || (u.linked ? "Bitbucket account" : "Known only from commit author names")}</p>
-        </div>
+        <nav className="crumbs" aria-label="Breadcrumb">
+          <Link href="/users">People</Link>
+        </nav>
         <Window base={`/users/${id}`} days={days} />
       </div>
+      <header className="subject">
+        <h1>{u.display_name}</h1>
+        <div className="meta">{[u.job_title, u.department, u.email].filter(Boolean).join(" · ") || (u.linked ? "Bitbucket account" : "Known only from commit author names")}</div>
+      </header>
 
-      <div className="verdict" style={{ borderTop: 0, marginTop: 0, paddingTop: 0 }}>
+      <section className="verdict" aria-label={`Last ${days} days`}>
         <ScoreMeter value={u.avg_score} large />
-        <p className="lede">
-          <Link href={`/commits?author_id=${u.id}`}>
-            <b>{num(u.commits)}</b> commits
-          </Link>{" "}
-          in the last {days} days, <b>{num(u.reviewed)}</b> reviewed, with <b>{num(u.findings)}</b> {u.findings === 1 ? "finding" : "findings"}.
-        </p>
-      </div>
+        <div className="kpis">
+          <div className="kpi">
+            <Link href={`/commits?author_id=${u.id}`} className="label">
+              Commits
+            </Link>
+            <div className="big">{num(u.commits)}</div>
+          </div>
+          <div className="kpi">
+            <div className="label">Reviewed</div>
+            <div className="big">{num(u.reviewed)}</div>
+          </div>
+          <div className="kpi">
+            <div className="label">Findings</div>
+            <div className="big">{num(u.findings)}</div>
+          </div>
+        </div>
+      </section>
 
       <section className="section" aria-labelledby="weekly">
         <header>

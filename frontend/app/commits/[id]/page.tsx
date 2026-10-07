@@ -28,9 +28,11 @@ export default async function CommitPage({ params, searchParams }: { params: Pro
 
   return (
     <>
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <Link href="/commits">Commits</Link> / <Link href={`/commits?repo_id=${c.repository.id}`}>{c.repository.full_name}</Link>
-      </nav>
+      <div className="head">
+        <nav className="crumbs" aria-label="Breadcrumb">
+          <Link href="/commits">Commits</Link> / <Link href={`/commits?repo_id=${c.repository.id}`}>{c.repository.full_name}</Link>
+        </nav>
+      </div>
       {notice ? (
         <p className="banner" role="status">
           {notice}

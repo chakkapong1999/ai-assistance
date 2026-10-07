@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import "@fontsource-variable/schibsted-grotesk";
-import "@fontsource-variable/jetbrains-mono";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import Rail from "@/components/Rail";
 import { api } from "@/lib/api";
 import "./globals.css";
