@@ -75,7 +75,7 @@ curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/overview
 
 - **No `API_TOKENS` = no API.** The routes are not registered and the API logs a warning; it never falls back to open access.
 - Viewer tokens never see `users.email`; writes need an admin token.
-- With `docker compose`, `API_TOKENS` defaults to `dev-admin-token-change-me:admin` and the frontend gets the same value as `API_TOKEN`. Change both for anything but local use.
+- `docker compose` reads settings from a `.env` in the repository root (`cp .env.example .env`); the api and worker containers get every variable in it. `DATABASE_URL` is always set by compose. `API_TOKENS` defaults to `dev-admin-token-change-me:admin` and the frontend gets the same value as `API_TOKEN`. Change both for anything but local use.
 - **This authenticates the dashboard server, not the people using it.** Anyone who can open the dashboard can do what its token can. End-user login (for example Bitbucket OAuth) is not built yet; until then keep the dashboard on a trusted network.
 
 ## Dashboard (`frontend/`)

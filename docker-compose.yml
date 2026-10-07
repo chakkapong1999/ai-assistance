@@ -1,4 +1,10 @@
 # Local stack. Reviews default to the mock reviewer; the worker never calls an LLM here.
+#
+# Settings come from a .env file next to this one (cp .env.example .env). Compose uses it two ways:
+# ${VAR:-default} below reads it, and the backend services also get every variable in it
+# (env_file), so REVIEW_NEW_REPOS, CLAUDE_BIN and the like need no line here. Values under
+# `environment:` win over env_file, which keeps DATABASE_URL pointing at the postgres container.
+# The frontend gets no env_file on purpose: it must not see BITBUCKET_TOKEN and friends.
 services:
   postgres:
     image: postgres:16
@@ -18,6 +24,9 @@ services:
 
   backend-api:
     build: ./backend
+    env_file:
+      - path: .env
+        required: false
     command: ["--mode=api"]
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/ai_review?sslmode=disable
@@ -33,6 +42,9 @@ services:
 
   backend-worker:
     build: ./backend
+    env_file:
+      - path: .env
+        required: false
     command: ["--mode=worker"]
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/ai_review?sslmode=disable
@@ -51,7 +63,9 @@ services:
     build: ./frontend
     environment:
       API_BASE_URL: http://backend-api:8080
+      # must be one of the tokens in API_TOKENS
       API_TOKEN: ${API_TOKEN:-dev-admin-token-change-me}
+      DISPLAY_TZ: ${DISPLAY_TZ:-Asia/Bangkok}
     ports:
       - "3000:3000"
     depends_on:
