@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -25,6 +26,13 @@ import (
 const (
 	adminTok  = "admin-token-0123456789"
 	viewerTok = "viewer-token-0123456789"
+
+	aliceTok     = "alice-author-token-0123"
+	robTok       = "rob-author-token-012345"
+	samTok       = "sam-senior-token-01234"
+	aliceLeadTok = "alice-lead-token-01234"
+	ghostTok     = "ghost-author-token-012"
+	adminSamTok  = "sam-admin-token-012345"
 )
 
 var pool *pgxpool.Pool
@@ -68,9 +76,6 @@ func setup(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := restapi.New(store.NewDashboard(pool, rc), []config.APIToken{{Token: adminTok, Role: "admin"}, {Token: viewerTok, Role: "viewer"}}, discardLog())
-	srv := httptest.NewServer(h)
-	t.Cleanup(srv.Close)
 
 	ids := map[string]int64{}
 	ws := must(t, `INSERT INTO workspaces (bb_uuid, slug, name) VALUES ('{ws}', 'acme', 'Acme') RETURNING id`)
@@ -113,6 +118,18 @@ func setup(t *testing.T) *env {
 	finding(old, "old.go", 1, "critical", "stale")
 	r2 := review("c2", 100, 5) // newer: this one counts
 	_ = r2
+	ids["sam"] = must(t, `INSERT INTO users (display_name) VALUES ('Sam Senior') RETURNING id`)
+	h := restapi.New(store.NewDashboard(pool, rc), []config.APIToken{
+		{Token: adminTok, Role: "admin"}, {Token: viewerTok, Role: "viewer"},
+		{Token: aliceTok, Role: "author", UserID: ids["alice"]},
+		{Token: robTok, Role: "author", UserID: ids["rob"]},
+		{Token: samTok, Role: "senior", UserID: ids["sam"]},
+		{Token: aliceLeadTok, Role: "lead", UserID: ids["alice"]},
+		{Token: ghostTok, Role: "author", UserID: 99999},
+		{Token: adminSamTok, Role: "admin", UserID: ids["sam"]},
+	}, discardLog())
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
 	return &env{srv: srv, ids: ids}
 }
 
@@ -631,7 +648,7 @@ func TestUsers(t *testing.T) {
 		Total int `json:"total"`
 	}
 	e.get(t, "/api/v1/users?sort=commits", &p)
-	if p.Total != 2 || p.Items[0].Name != "Alice A" || !p.Items[0].Linked || p.Items[0].Commits != 4 ||
+	if p.Total != 3 || p.Items[0].Name != "Alice A" || !p.Items[0].Linked || p.Items[0].Commits != 4 ||
 		p.Items[0].Reviewed != 2 || p.Items[0].AvgScore == nil || *p.Items[0].AvgScore != 95.5 || p.Items[0].Findings != 3 {
 		t.Errorf("alice = %+v", p.Items[0])
 	}
@@ -798,5 +815,135 @@ func TestHealth(t *testing.T) {
 	e.get(t, "/api/v1/health", &h)
 	if h.Stuck.Commits != 0 {
 		t.Errorf("commits with a live job are stuck: %+v", h)
+	}
+}
+
+func (e *env) post(t *testing.T, path, tok string, body any) (int, string) {
+	t.Helper()
+	code, b := e.do(t, "POST", path, tok, body)
+	return code, string(b)
+}
+
+func TestFixWorkflowOverHTTP(t *testing.T) {
+	e := setup(t)
+	var rv int64
+	var fids []int64
+	if err := pool.QueryRow(context.Background(), `SELECT r.id FROM reviews r JOIN commits c ON c.id = r.commit_id WHERE c.hash = 'c10000'`).Scan(&rv); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := pool.Query(context.Background(), `SELECT id FROM review_findings WHERE review_id = $1 ORDER BY id`, rv)
+	for rows.Next() {
+		var id int64
+		rows.Scan(&id)
+		fids = append(fids, id)
+	}
+	rows.Close()
+	if len(fids) != 3 {
+		t.Fatalf("seed has %d findings", len(fids))
+	}
+	fp := func(i int, action string) string { return fmt.Sprintf("/api/v1/findings/%d/%s", fids[i], action) }
+	rp := fmt.Sprintf("/api/v1/reviews/%d/close", rv)
+
+	// Who am I?
+	var me struct {
+		Role string `json:"role"`
+		User *struct {
+			ID   int64
+			Name string
+		} `json:"user"`
+	}
+	code, b := e.do(t, "GET", "/api/v1/me", aliceTok, nil)
+	if err := json.Unmarshal(b, &me); err != nil || code != 200 || me.Role != "author" || me.User == nil || me.User.Name != "Alice A" {
+		t.Fatalf("me = %d %s", code, b)
+	}
+	code, b = e.do(t, "GET", "/api/v1/me", viewerTok, nil)
+	if code != 200 || !strings.Contains(string(b), `"user":null`) {
+		t.Fatalf("viewer me = %d %s", code, b)
+	}
+
+	// Role gates.
+	for _, c := range []struct {
+		path, tok string
+		want      int
+	}{
+		{fp(0, "fixed"), "", 401},
+		{fp(0, "fixed"), viewerTok, 403},
+		{fp(0, "reopen"), aliceTok, 403}, // an author is not a reviewer
+		{rp, aliceTok, 403},
+		{fp(0, "fixed"), adminTok, 403}, // admin token without a user
+		{fp(0, "fixed"), ghostTok, 403}, // user does not exist
+		{fp(0, "fixed"), robTok, 403},   // not their commit
+		{fp(0, "fixed"), samTok, 403},   // reviewers do not fix other people's findings
+		{"/api/v1/findings/0/fixed", aliceTok, 400},
+		{"/api/v1/findings/999999/fixed", aliceTok, 404},
+	} {
+		if code, body := e.post(t, c.path, c.tok, nil); code != c.want {
+			t.Errorf("POST %s as %q = %d %s, want %d", c.path, c.tok, code, body, c.want)
+		}
+	}
+
+	// Bad body.
+	if code, _ := e.post(t, fp(0, "fixed"), aliceTok, map[string]any{"nope": 1}); code != 400 {
+		t.Errorf("unknown field = %d, want 400", code)
+	}
+
+	// The author fixes two findings; the third stays open.
+	for i := 0; i < 2; i++ {
+		if code, body := e.post(t, fp(i, "fixed"), aliceTok, map[string]string{"note": "done"}); code != 200 {
+			t.Fatalf("fixed %d = %d %s", i, code, body)
+		}
+	}
+	if code, _ := e.post(t, fp(0, "fixed"), aliceTok, nil); code != 409 {
+		t.Errorf("fixing twice = %d, want 409", code)
+	}
+
+	// Review: not own, not while open.
+	if code, body := e.post(t, rp, aliceLeadTok, nil); code != 403 || !strings.Contains(body, "your own work") {
+		t.Errorf("closing own review = %d %s", code, body)
+	}
+	if code, body := e.post(t, rp, samTok, nil); code != 409 || !strings.Contains(body, "1 findings are still open") {
+		t.Errorf("closing with an open finding = %d %s", code, body)
+	}
+	if code, _ := e.post(t, fp(1, "reopen"), samTok, nil); code != 409 {
+		t.Errorf("reopen without a note = %d, want 409", code)
+	}
+	if code, body := e.post(t, fp(1, "reopen"), samTok, map[string]string{"note": "still racy"}); code != 200 {
+		t.Fatalf("reopen = %d %s", code, body)
+	}
+	if code, body := e.post(t, fp(2, "dismiss"), adminSamTok, map[string]string{"note": "false positive"}); code != 200 {
+		t.Fatalf("dismiss = %d %s", code, body)
+	}
+	if code, _ := e.post(t, fp(1, "fixed"), aliceTok, nil); code != 200 {
+		t.Fatal("author fixes again")
+	}
+	if code, body := e.post(t, rp, samTok, map[string]string{"note": "ok"}); code != 200 {
+		t.Fatalf("close = %d %s", code, body)
+	}
+
+	// The detail shows all of it.
+	var d struct {
+		Review struct {
+			Closed *struct {
+				By   struct{ Name string }
+				Note string
+			} `json:"closed"`
+			Findings []struct {
+				ID      int64
+				Status  string
+				History []struct{ Action string }
+			}
+		}
+	}
+	e.get(t, fmt.Sprintf("/api/v1/commits/%d", e.ids["c1"]), &d)
+	if d.Review.Closed == nil || d.Review.Closed.By.Name != "Sam Senior" || d.Review.Closed.Note != "ok" {
+		t.Errorf("closed = %+v", d.Review.Closed)
+	}
+	got := map[int64]string{}
+	hist := map[int64]int{}
+	for _, f := range d.Review.Findings {
+		got[f.ID], hist[f.ID] = f.Status, len(f.History)
+	}
+	if got[fids[0]] != "fixed" || got[fids[1]] != "fixed" || got[fids[2]] != "dismissed" || hist[fids[1]] != 3 {
+		t.Errorf("statuses = %v history = %v", got, hist)
 	}
 }

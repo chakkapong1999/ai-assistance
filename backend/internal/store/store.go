@@ -67,5 +67,11 @@ func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	if !has {
 		return errors.New("store: review_findings is out of date: run `make migrate` (migration 0004)")
 	}
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('finding_events') IS NOT NULL`).Scan(&has); err != nil {
+		return fmt.Errorf("store: check finding_events: %w", err)
+	}
+	if !has {
+		return errors.New("store: the fix workflow tables are missing: run `make migrate` (migration 0005)")
+	}
 	return nil
 }

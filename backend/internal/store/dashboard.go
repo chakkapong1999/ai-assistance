@@ -507,20 +507,27 @@ type Finding struct {
 	// before it was recorded.
 	CodeContext *string     `json:"code_context"`
 	Suggestion  *Suggestion `json:"suggestion"`
+	// Fix workflow: open -> fixed (by the author) -> back to open, dismissed or left fixed.
+	Status     string         `json:"status"`
+	StatusBy   *UserRef       `json:"status_by"`
+	StatusNote *string        `json:"status_note"`
+	StatusAt   *time.Time     `json:"status_at"`
+	History    []FindingEvent `json:"history"`
 }
 
 type Review struct {
-	ID            int64     `json:"id"`
-	Model         string    `json:"model"`
-	PromptVersion string    `json:"prompt_version"`
-	Score         *int      `json:"score"`
-	Summary       string    `json:"summary"`
-	DurationMs    *int      `json:"duration_ms"`
-	TokensIn      *int      `json:"tokens_in"`
-	TokensOut     *int      `json:"tokens_out"`
-	CostUSD       *float64  `json:"cost_usd"`
-	CreatedAt     time.Time `json:"created_at"`
-	Findings      []Finding `json:"findings"`
+	ID            int64         `json:"id"`
+	Model         string        `json:"model"`
+	PromptVersion string        `json:"prompt_version"`
+	Score         *int          `json:"score"`
+	Summary       string        `json:"summary"`
+	DurationMs    *int          `json:"duration_ms"`
+	TokensIn      *int          `json:"tokens_in"`
+	TokensOut     *int          `json:"tokens_out"`
+	CostUSD       *float64      `json:"cost_usd"`
+	CreatedAt     time.Time     `json:"created_at"`
+	Closed        *ReviewClosed `json:"closed"`
+	Findings      []Finding     `json:"findings"`
 }
 
 type CommitDetail struct {
@@ -558,19 +565,35 @@ func (d *Dashboard) Commit(ctx context.Context, id int64) (CommitDetail, error) 
 // never user input.
 func (d *Dashboard) latestReviewOf(ctx context.Context, col string, id int64) (*Review, error) {
 	rv := &Review{Findings: []Finding{}}
+	var (
+		closedAt              *time.Time
+		closedBy              *int64
+		closedName, closeNote *string
+	)
 	err := d.pool.QueryRow(ctx, `
-		SELECT id, model, prompt_version, score, summary, duration_ms, tokens_in, tokens_out, cost_usd::float8, created_at
-		FROM reviews WHERE `+col+` = $1 ORDER BY created_at DESC, id DESC LIMIT 1`, id).
-		Scan(&rv.ID, &rv.Model, &rv.PromptVersion, &rv.Score, &rv.Summary, &rv.DurationMs, &rv.TokensIn, &rv.TokensOut, &rv.CostUSD, &rv.CreatedAt)
+		SELECT r.id, r.model, r.prompt_version, r.score, r.summary, r.duration_ms, r.tokens_in, r.tokens_out, r.cost_usd::float8, r.created_at,
+		       r.closed_at, r.closed_by, cu.display_name, r.close_note
+		FROM reviews r LEFT JOIN users cu ON cu.id = r.closed_by
+		WHERE r.`+col+` = $1 ORDER BY r.created_at DESC, r.id DESC LIMIT 1`, id).
+		Scan(&rv.ID, &rv.Model, &rv.PromptVersion, &rv.Score, &rv.Summary, &rv.DurationMs, &rv.TokensIn, &rv.TokensOut, &rv.CostUSD, &rv.CreatedAt,
+			&closedAt, &closedBy, &closedName, &closeNote)
 	if err != nil {
 		return nil, fmt.Errorf("review: %w", err)
+	}
+	if closedAt != nil {
+		rv.Closed = &ReviewClosed{At: *closedAt, Note: closeNote}
+		if closedBy != nil {
+			rv.Closed.By = &UserRef{ID: *closedBy, Name: ptrStr(closedName)}
+		}
 	}
 
 	rows, err := d.pool.Query(ctx, `
 		SELECT f.id, f.file_path, f.line_start, f.line_end, f.severity, f.category, f.title, f.explanation, f.code_context,
+		       f.status, f.status_by, su.display_name, f.status_note, f.status_at,
 		       s.id, s.original_snippet, s.suggested_snippet, s.unified_diff, s.status
 		FROM review_findings f
 		LEFT JOIN code_suggestions s ON s.finding_id = f.id
+		LEFT JOIN users su ON su.id = f.status_by
 		WHERE f.review_id = $1
 		ORDER BY CASE f.severity WHEN 'critical' THEN 0 WHEN 'major' THEN 1 WHEN 'minor' THEN 2 ELSE 3 END,
 		         f.file_path, f.line_start, f.id, s.id`, rv.ID)
@@ -581,20 +604,73 @@ func (d *Dashboard) latestReviewOf(ctx context.Context, col string, id int64) (*
 	for rows.Next() {
 		var f Finding
 		var sid *int64
-		var orig, sugg, diff, status *string
+		var orig, sugg, diff, status, byName *string
+		var by *int64
 		if err := rows.Scan(&f.ID, &f.FilePath, &f.LineStart, &f.LineEnd, &f.Severity, &f.Category, &f.Title, &f.Explanation, &f.CodeContext,
+			&f.Status, &by, &byName, &f.StatusNote, &f.StatusAt,
 			&sid, &orig, &sugg, &diff, &status); err != nil {
 			return nil, err
 		}
 		if n := len(rv.Findings); n > 0 && rv.Findings[n-1].ID == f.ID {
 			continue // a second suggestion for the same finding; one is shown
 		}
+		if by != nil {
+			f.StatusBy = &UserRef{ID: *by, Name: ptrStr(byName)}
+		}
+		f.History = []FindingEvent{}
 		if sid != nil {
 			f.Suggestion = &Suggestion{ID: *sid, OriginalSnippet: *orig, SuggestedSnippet: *sugg, UnifiedDiff: *diff, Status: *status}
 		}
 		rv.Findings = append(rv.Findings, f)
 	}
-	return rv, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return rv, d.loadHistory(ctx, rv)
+}
+
+func ptrStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// loadHistory fills in what happened to each finding after the review.
+func (d *Dashboard) loadHistory(ctx context.Context, rv *Review) error {
+	if len(rv.Findings) == 0 {
+		return nil
+	}
+	at := make(map[int64]*Finding, len(rv.Findings))
+	for i := range rv.Findings {
+		at[rv.Findings[i].ID] = &rv.Findings[i]
+	}
+	rows, err := d.pool.Query(ctx, `
+		SELECT e.finding_id, e.action, e.actor_id, u.display_name, e.note, e.created_at
+		FROM finding_events e
+		JOIN review_findings f ON f.id = e.finding_id
+		LEFT JOIN users u ON u.id = e.actor_id
+		WHERE f.review_id = $1 ORDER BY e.id`, rv.ID)
+	if err != nil {
+		return fmt.Errorf("finding history: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fid int64
+		var ev FindingEvent
+		var by *int64
+		var name *string
+		if err := rows.Scan(&fid, &ev.Action, &by, &name, &ev.Note, &ev.At); err != nil {
+			return err
+		}
+		if by != nil {
+			ev.By = &UserRef{ID: *by, Name: ptrStr(name)}
+		}
+		if f := at[fid]; f != nil {
+			f.History = append(f.History, ev)
+		}
+	}
+	return rows.Err()
 }
 
 // Rereview puts a commit back in the queue. The status change and the job
@@ -779,4 +855,14 @@ func (d *Dashboard) User(ctx context.Context, id int64, days int) (UserDetail, e
 		ud.Trend = append(ud.Trend, p)
 	}
 	return ud, rows.Err()
+}
+
+// UserName is the display name of a user, for showing who a token belongs to.
+func (d *Dashboard) UserName(ctx context.Context, id int64) (string, error) {
+	var name string
+	err := d.pool.QueryRow(ctx, `SELECT display_name FROM users WHERE id = $1`, id).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return name, err
 }

@@ -148,7 +148,7 @@ func TestAPITokens(t *testing.T) {
 	}
 
 	c, err := load(" aaaaaaaaaaaaaaaa:admin , bbbbbbbbbbbbbbbb:viewer ")
-	if err != nil || len(c.APITokens) != 2 || c.APITokens[0] != (APIToken{"aaaaaaaaaaaaaaaa", RoleAdmin}) || c.APITokens[1].Role != RoleViewer {
+	if err != nil || len(c.APITokens) != 2 || c.APITokens[0] != (APIToken{Token: "aaaaaaaaaaaaaaaa", Role: RoleAdmin}) || c.APITokens[1].Role != RoleViewer {
 		t.Fatalf("got %+v, %v", c.APITokens, err)
 	}
 	if c, err := load(""); err != nil || len(c.APITokens) != 0 {
@@ -169,6 +169,40 @@ func TestAPITokens(t *testing.T) {
 		} else if strings.Contains(err.Error(), secret) {
 			t.Errorf("%s: error leaks the token: %v", name, err)
 		}
+	}
+}
+
+func TestAPITokensWithUsers(t *testing.T) {
+	load := func(tokens string) (Config, error) {
+		return Load(ModeAPI, env(map[string]string{"API_TOKENS": tokens, "DATABASE_URL": "postgres://x", "BITBUCKET_WEBHOOK_SECRET": "s"}))
+	}
+	c, err := load("aaaaaaaaaaaaaaaa:author:7, bbbbbbbbbbbbbbbb:senior:8,cccccccccccccccc:lead:9,dddddddddddddddd:admin:10,eeeeeeeeeeeeeeee:admin,ffffffffffffffff:viewer,ab:cd-0123456789:author:11")
+	if err != nil || len(c.APITokens) != 7 {
+		t.Fatalf("%+v %v", c.APITokens, err)
+	}
+	want := []APIToken{
+		{"aaaaaaaaaaaaaaaa", RoleAuthor, 7}, {"bbbbbbbbbbbbbbbb", RoleSenior, 8}, {"cccccccccccccccc", RoleLead, 9},
+		{"dddddddddddddddd", RoleAdmin, 10}, {"eeeeeeeeeeeeeeee", RoleAdmin, 0}, {"ffffffffffffffff", RoleViewer, 0}, {"ab:cd-0123456789", RoleAuthor, 11},
+	}
+	for i, w := range want {
+		if c.APITokens[i] != w {
+			t.Errorf("token %d = %+v, want %+v", i, c.APITokens[i], w)
+		}
+	}
+	for name, v := range map[string]string{
+		"author without user": "aaaaaaaaaaaaaaaa:author",
+		"senior without user": "aaaaaaaaaaaaaaaa:senior",
+		"lead without user":   "aaaaaaaaaaaaaaaa:lead",
+		"zero user":           "aaaaaaaaaaaaaaaa:author:0",
+		"negative user":       "aaaaaaaaaaaaaaaa:author:-3",
+		"user without role":   "aaaaaaaaaaaaaaaa:5",
+	} {
+		if _, err := load(v); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+	if !RoleAtLeast(RoleLead, RoleSenior) || RoleAtLeast(RoleAuthor, RoleSenior) || RoleAtLeast("nope", RoleViewer) {
+		t.Error("RoleAtLeast ranks wrongly")
 	}
 }
 

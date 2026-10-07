@@ -255,3 +255,15 @@ func TestCheckSchemaNoticesMissingCodeContext(t *testing.T) {
 }
 
 var _ pgx.Tx // keep the import used if helpers change
+
+func TestCheckSchemaNoticesMissingFixWorkflow(t *testing.T) {
+	ctx := context.Background()
+	if _, err := testPool.Exec(ctx, `ALTER TABLE finding_events RENAME TO finding_events_off`); err != nil {
+		t.Fatal(err)
+	}
+	defer testPool.Exec(ctx, `ALTER TABLE finding_events_off RENAME TO finding_events`)
+	err := store.CheckSchema(ctx, testPool)
+	if err == nil || !strings.Contains(err.Error(), "migration 0005") {
+		t.Fatalf("err = %v, want a hint about migration 0005", err)
+	}
+}
