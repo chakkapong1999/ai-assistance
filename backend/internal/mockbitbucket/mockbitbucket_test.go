@@ -116,3 +116,54 @@ func TestListRecentCommits(t *testing.T) {
 		t.Fatalf("parents: %+v / %+v", all[0].Parents, all[249].Parents)
 	}
 }
+
+func TestClientPullRequests(t *testing.T) {
+	ctx := context.Background()
+	m := New("")
+	m.AddCommit("acme", "svc", "main", "base")
+	for _, b := range []string{"a", "b", "c"} {
+		m.AddCommit("acme", "svc", b, "work on "+b)
+	}
+	m.AddPullRequest("acme", "svc", "a", "", "PR a", "about a")
+	m.AddPullRequest("acme", "svc", "b", "", "PR b", "")
+	m.AddPullRequest("acme", "svc", "c", "", "PR c", "")
+	m.SetPullRequestState("acme", "svc", 2, "MERGED")
+	c := newClient(t, m)
+
+	open, err := c.ListOpenPullRequests(ctx, "acme", "svc", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(open) != 2 || open[0].Title != "PR c" || open[1].Title != "PR a" || open[0].State != "OPEN" {
+		t.Fatalf("open = %+v; want the two open ones, most recently updated first", open)
+	}
+	if open[1].Description != "about a" || open[1].Source.Branch.Name != "a" || open[1].Destination.Branch.Name != "main" ||
+		len(open[1].Source.Commit.Hash) != 12 || open[1].Author == nil || open[1].Author.AccountID == "" {
+		t.Errorf("fields = %+v", open[1])
+	}
+	if got, err := c.ListOpenPullRequests(ctx, "acme", "svc", 1); err != nil || len(got) != 1 {
+		t.Fatalf("max=1 -> %d, %v", len(got), err)
+	}
+
+	pr, err := c.GetPullRequest(ctx, "acme", "svc", 2)
+	if err != nil || pr.State != "MERGED" {
+		t.Fatalf("closed pull request: %+v, %v", pr, err)
+	}
+	if _, err := c.GetPullRequest(ctx, "acme", "svc", 99); !errors.Is(err, bitbucket.ErrNotFound) {
+		t.Fatalf("unknown pull request: %v, want ErrNotFound", err)
+	}
+	if _, err := c.GetPullRequest(ctx, "acme", "svc", 0); err == nil {
+		t.Fatal("id 0 accepted")
+	}
+
+	diff, err := c.GetPullRequestDiff(ctx, "acme", "svc", 1)
+	if err != nil || diff == "" {
+		t.Fatalf("diff: %q, %v", diff, err)
+	}
+	if _, err := c.GetPullRequestDiff(ctx, "acme", "svc", 99); !errors.Is(err, bitbucket.ErrNotFound) {
+		t.Fatalf("diff of unknown pull request: %v", err)
+	}
+	if got := m.Calls("prdiff"); got != 2 {
+		t.Errorf("prdiff calls = %d", got)
+	}
+}

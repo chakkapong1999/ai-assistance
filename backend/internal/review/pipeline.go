@@ -6,10 +6,14 @@ import (
 	"strings"
 )
 
-// Input is one commit to review. Diff is the raw unified diff from Bitbucket.
+// Input is one commit, or one whole pull request, to review. Diff is the raw
+// unified diff from Bitbucket.
 type Input struct {
 	Repo, Commit, Message, Author string
 	Diff                          string
+	// PullRequest means Diff is the combined change of a pull request: Commit
+	// is then its head, and Message its title and description.
+	PullRequest bool
 }
 
 // Outcome is everything the worker stores for a finished review.
@@ -82,7 +86,7 @@ func Run(ctx context.Context, rv Reviewer, in Input, lim Limits) (Outcome, error
 			return Outcome{}, err
 		}
 		res, err := rv.Review(ctx, Request{
-			Repo: in.Repo, Commit: in.Commit, Message: in.Message, Author: in.Author, Chunk: ch,
+			Repo: in.Repo, Commit: in.Commit, Message: in.Message, Author: in.Author, PullRequest: in.PullRequest, Chunk: ch,
 		})
 		if err != nil {
 			return Outcome{}, fmt.Errorf("chunk %d/%d: %w", i+1, len(chunks), err)

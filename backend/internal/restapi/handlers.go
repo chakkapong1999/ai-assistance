@@ -261,6 +261,85 @@ func (s *server) rereview(w http.ResponseWriter, r *http.Request, _ string) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
 
+var prStates = map[string]bool{"OPEN": true, "MERGED": true, "DECLINED": true, "SUPERSEDED": true, "DELETED": true}
+
+type pullRequestPage struct {
+	Items      []store.PullRequestSummary `json:"items"`
+	NextCursor *string                    `json:"next_cursor"`
+}
+
+func (s *server) listPullRequests(w http.ResponseWriter, r *http.Request, _ string) {
+	limit, err := intParam(r, "limit", defaultLimit, 1, maxLimit)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	var f store.PullRequestFilter
+	for _, p := range []struct {
+		name string
+		dst  *int64
+	}{{"repo_id", &f.RepoID}, {"author_id", &f.AuthorID}} {
+		if v := r.URL.Query().Get(p.name); v != "" {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || n < 1 {
+				badRequest(w, paramError(p.name+" must be a positive integer"))
+				return
+			}
+			*p.dst = n
+		}
+	}
+	if f.State = r.URL.Query().Get("state"); f.State != "" && !prStates[f.State] {
+		badRequest(w, paramError("state must be one of OPEN, MERGED, DECLINED, SUPERSEDED, DELETED"))
+		return
+	}
+	if f.Status = r.URL.Query().Get("review_status"); f.Status != "" && !commitStatuses[f.Status] {
+		badRequest(w, paramError("review_status must be one of pending, running, done, skipped, failed"))
+		return
+	}
+	if f.Q, err = textParam(r, "q"); err != nil {
+		badRequest(w, err)
+		return
+	}
+	items, next, err := s.data.PullRequests(r.Context(), f, r.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out := pullRequestPage{Items: items}
+	if next != "" {
+		out.NextCursor = &next
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *server) getPullRequest(w http.ResponseWriter, r *http.Request, _ string) {
+	id, ok := idParam(r, "id")
+	if !ok {
+		badID(w)
+		return
+	}
+	pr, err := s.data.PullRequest(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, pr)
+}
+
+func (s *server) rereviewPullRequest(w http.ResponseWriter, r *http.Request, _ string) {
+	id, ok := idParam(r, "id")
+	if !ok {
+		badID(w)
+		return
+	}
+	if err := s.data.RereviewPullRequest(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.log.Info("pull request re-review requested", "pull_request_id", id)
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+}
+
 func (s *server) listUsers(w http.ResponseWriter, r *http.Request, role string) {
 	limit, offset, err := paging(r)
 	if err != nil {

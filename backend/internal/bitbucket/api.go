@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,9 @@ const maxPages = 100
 
 // Commit has the same shape in webhook payloads and in the commits API.
 type Commit = webhook.Commit
+
+// PullRequest is a pull request as returned by the pullrequests API.
+type PullRequest = webhook.PullRequest
 
 // User is an account as returned by the permission endpoints.
 type User struct {
@@ -247,4 +251,79 @@ func need(fields map[string]string) error {
 		return errors.New("bitbucket: missing " + strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+// ListOpenPullRequests returns the open pull requests of a repository, most
+// recently updated first, at most max of them (0 = no limit). The caller can
+// tell the list was cut short by len == max.
+func (c *Client) ListOpenPullRequests(ctx context.Context, workspace, repo string, max int) ([]PullRequest, error) {
+	if err := need(map[string]string{"workspace": workspace, "repo": repo}); err != nil {
+		return nil, err
+	}
+	q := url.Values{"pagelen": {"50"}, "state": {"OPEN"}, "sort": {"-updated_on"}}
+	var out []PullRequest
+	next := c.endpoint("repositories", workspace, repo, "pullrequests") + "?" + q.Encode()
+	for i := 0; next != ""; i++ {
+		if i >= maxPages {
+			return nil, fmt.Errorf("bitbucket: more than %d pages, giving up", maxPages)
+		}
+		if err := c.sameOrigin(next); err != nil {
+			return nil, err
+		}
+		b, err := c.get(ctx, next)
+		if err != nil {
+			return nil, err
+		}
+		var p page[PullRequest]
+		if err := json.Unmarshal(b, &p); err != nil {
+			return nil, fmt.Errorf("bitbucket: decoding pull requests page %d: %w", i+1, err)
+		}
+		for _, pr := range p.Values {
+			out = append(out, pr)
+			if max > 0 && len(out) >= max {
+				return out, nil
+			}
+		}
+		next = p.Next
+	}
+	return out, nil
+}
+
+// GetPullRequest returns one pull request; ErrNotFound if it is gone.
+func (c *Client) GetPullRequest(ctx context.Context, workspace, repo string, id int) (PullRequest, error) {
+	var pr PullRequest
+	if err := need(map[string]string{"workspace": workspace, "repo": repo}); err != nil {
+		return pr, err
+	}
+	if id < 1 {
+		return pr, errors.New("bitbucket: invalid pull request id")
+	}
+	b, err := c.get(ctx, c.endpoint("repositories", workspace, repo, "pullrequests", strconv.Itoa(id)))
+	if err != nil {
+		return pr, err
+	}
+	if err := json.Unmarshal(b, &pr); err != nil {
+		return pr, fmt.Errorf("bitbucket: decoding pull request: %w", err)
+	}
+	if pr.ID == 0 {
+		return pr, fmt.Errorf("bitbucket: pull request %d has no id in the response", id)
+	}
+	return pr, nil
+}
+
+// GetPullRequestDiff returns the unified diff of the whole pull request: the
+// changes its source branch would bring into the destination, all commits
+// together.
+func (c *Client) GetPullRequestDiff(ctx context.Context, workspace, repo string, id int) (string, error) {
+	if err := need(map[string]string{"workspace": workspace, "repo": repo}); err != nil {
+		return "", err
+	}
+	if id < 1 {
+		return "", errors.New("bitbucket: invalid pull request id")
+	}
+	b, err := c.get(ctx, c.endpoint("repositories", workspace, repo, "pullrequests", strconv.Itoa(id), "diff"))
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }

@@ -49,10 +49,20 @@ type commit struct {
 	seq                   int
 }
 
+type pullRequest struct {
+	id                  int
+	title, description  string
+	source, dest, state string
+	lastHash            string // source head while the branch exists
+	created, updated    time.Time
+	deleted             bool
+}
+
 type repo struct {
 	workspace, slug string
 	defaultBranch   string
 	branches        map[string]string // name -> head hash
+	prs             []*pullRequest
 }
 
 // Mock is an in-memory Bitbucket: repositories with branches and a commit graph.
@@ -106,7 +116,82 @@ func (m *Mock) AddCommitAt(workspace, slug, branch, message string, at time.Time
 	}
 	m.commits[c.hash] = c
 	r.branches[branch] = c.hash
+	for _, pr := range r.prs {
+		if pr.state == "OPEN" && pr.source == branch {
+			pr.updated = at.UTC() // a push to the source branch updates the pull request
+		}
+	}
 	return c.hash
+}
+
+// AddPullRequest opens a pull request from source into dest (the main branch
+// when empty) and returns its id. The source branch must exist.
+func (m *Mock) AddPullRequest(workspace, slug, source, dest, title, description string) int {
+	m.AddRepo(workspace, slug)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.repos[workspace+"/"+slug]
+	if dest == "" {
+		dest = r.defaultBranch
+	}
+	now := time.Now().UTC()
+	pr := &pullRequest{id: len(r.prs) + 1, title: title, description: description, source: source, dest: dest,
+		state: "OPEN", lastHash: r.branches[source], created: now, updated: now}
+	r.prs = append(r.prs, pr)
+	return pr.id
+}
+
+// SetPullRequestState moves a pull request to MERGED, DECLINED or SUPERSEDED.
+func (m *Mock) SetPullRequestState(workspace, slug string, id int, state string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if pr := m.pr(workspace, slug, id); pr != nil {
+		pr.state, pr.updated = state, time.Now().UTC()
+	}
+}
+
+// SetPullRequestUpdated backdates a pull request's updated_on.
+func (m *Mock) SetPullRequestUpdated(workspace, slug string, id int, at time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if pr := m.pr(workspace, slug, id); pr != nil {
+		pr.updated = at.UTC()
+	}
+}
+
+// DeletePullRequest makes Bitbucket answer 404 for a pull request.
+func (m *Mock) DeletePullRequest(workspace, slug string, id int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if pr := m.pr(workspace, slug, id); pr != nil {
+		pr.deleted = true
+	}
+}
+
+func (m *Mock) pr(workspace, slug string, id int) *pullRequest {
+	r := m.repos[workspace+"/"+slug]
+	if r == nil || id < 1 || id > len(r.prs) || r.prs[id-1].deleted {
+		return nil
+	}
+	return r.prs[id-1]
+}
+
+// prJSON renders a pull request. Like Bitbucket it reports a 12-character head.
+func (m *Mock) prJSON(r *repo, pr *pullRequest) map[string]any {
+	if h, ok := r.branches[pr.source]; ok {
+		pr.lastHash = h
+	}
+	short := pr.lastHash
+	if len(short) > 12 {
+		short = short[:12]
+	}
+	return map[string]any{
+		"type": "pullrequest", "id": pr.id, "title": pr.title, "description": pr.description, "state": pr.state,
+		"created_on": pr.created.Format(time.RFC3339Nano), "updated_on": pr.updated.Format(time.RFC3339Nano),
+		"author":      map[string]any{"uuid": "{mock-dev}", "account_id": "mock-dev", "display_name": "Mock Dev", "nickname": "mockdev"},
+		"source":      map[string]any{"branch": map[string]string{"name": pr.source}, "commit": map[string]string{"hash": short}},
+		"destination": map[string]any{"branch": map[string]string{"name": pr.dest}, "commit": map[string]string{"hash": ""}},
+	}
 }
 
 // DeleteBranch removes a branch (its commits stay).
@@ -119,7 +204,7 @@ func (m *Mock) DeleteBranch(workspace, slug, branch string) {
 }
 
 // Calls returns how many requests each endpoint kind has served
-// ("repository", "repositories", "branches", "commits", "diff").
+// ("repository", "repositories", "branches", "commits", "diff", "pullrequests", "pullrequest", "prdiff").
 func (m *Mock) Calls(kind string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -228,12 +313,68 @@ func commitJSON(c *commit) map[string]any {
 //	GET /repositories/{workspace}/{repo}/refs/branches    -> branches
 //	GET /repositories/{workspace}/{repo}/commits          -> commits (include / exclude)
 //	GET /repositories/{workspace}/{repo}/diff/{hash}      -> diff (the same for every commit)
+//	GET /repositories/{workspace}/{repo}/pullrequests     -> open pull requests (state filter)
+//	GET /repositories/{workspace}/{repo}/pullrequests/{id}, .../{id}/diff
 //
 // Debug (not Bitbucket): POST /_mock/commit?repo=ws/slug&branch=main&message=...
+//
+//	POST /_mock/pullrequest?repo=ws/slug&source=branch&title=...  (or &id=1&state=MERGED)
 func (m *Mock) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /repositories/{workspace}/{repo}/diff/{hash}", func(w http.ResponseWriter, r *http.Request) {
 		m.count("diff", r)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprint(w, m.diff)
+	})
+	notFound := func(w http.ResponseWriter) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"type": "error", "error": map[string]string{"message": "No such pull request"}})
+	}
+	mux.HandleFunc("GET /repositories/{workspace}/{repo}/pullrequests", func(w http.ResponseWriter, r *http.Request) {
+		m.count("pullrequests", r)
+		m.mu.Lock()
+		var prs []*pullRequest
+		rp := m.repos[r.PathValue("workspace")+"/"+r.PathValue("repo")]
+		if rp != nil {
+			for _, pr := range rp.prs {
+				if !pr.deleted && (r.URL.Query().Get("state") == "" || r.URL.Query().Get("state") == pr.state) {
+					prs = append(prs, pr)
+				}
+			}
+		}
+		sort.SliceStable(prs, func(i, j int) bool { return prs[i].updated.After(prs[j].updated) }) // sort=-updated_on
+		var vals []any
+		for _, pr := range prs {
+			vals = append(vals, m.prJSON(rp, pr))
+		}
+		m.mu.Unlock()
+		paged(w, r, vals)
+	})
+	mux.HandleFunc("GET /repositories/{workspace}/{repo}/pullrequests/{id}", func(w http.ResponseWriter, r *http.Request) {
+		m.count("pullrequest", r)
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		m.mu.Lock()
+		pr := m.pr(r.PathValue("workspace"), r.PathValue("repo"), id)
+		var body map[string]any
+		if pr != nil {
+			body = m.prJSON(m.repos[r.PathValue("workspace")+"/"+r.PathValue("repo")], pr)
+		}
+		m.mu.Unlock()
+		if body == nil {
+			notFound(w)
+			return
+		}
+		writeJSON(w, http.StatusOK, body)
+	})
+	mux.HandleFunc("GET /repositories/{workspace}/{repo}/pullrequests/{id}/diff", func(w http.ResponseWriter, r *http.Request) {
+		m.count("prdiff", r)
+		id, _ := strconv.Atoi(r.PathValue("id"))
+		m.mu.Lock()
+		pr := m.pr(r.PathValue("workspace"), r.PathValue("repo"), id)
+		m.mu.Unlock()
+		if pr == nil {
+			notFound(w)
+			return
+		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		fmt.Fprint(w, m.diff)
 	})
@@ -325,6 +466,31 @@ func (m *Mock) Handler() http.Handler {
 			msg = "mock commit"
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"hash": m.AddCommit(ws, slug, branch, msg)})
+	})
+	// Debug: open a pull request, or change the state of one (state=MERGED).
+	mux.HandleFunc("POST /_mock/pullrequest", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		ws, slug, ok := strings.Cut(q.Get("repo"), "/")
+		if !ok || slug == "" {
+			http.Error(w, "repo=workspace/slug required", http.StatusBadRequest)
+			return
+		}
+		if st := q.Get("state"); st != "" {
+			id, _ := strconv.Atoi(q.Get("id"))
+			m.SetPullRequestState(ws, slug, id, st)
+			writeJSON(w, http.StatusOK, map[string]any{"id": id, "state": st})
+			return
+		}
+		src := q.Get("source")
+		if src == "" {
+			http.Error(w, "source=branch required", http.StatusBadRequest)
+			return
+		}
+		title := q.Get("title")
+		if title == "" {
+			title = "mock pull request"
+		}
+		writeJSON(w, http.StatusOK, map[string]int{"id": m.AddPullRequest(ws, slug, src, q.Get("dest"), title, q.Get("description"))})
 	})
 	return mux
 }

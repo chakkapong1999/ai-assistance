@@ -68,7 +68,7 @@ The dashboard reads everything through a JSON API served by `--mode=api`. The co
 `GET /api/v1/openapi.yaml`; a test fails if the spec and the routes drift apart.
 
 ```bash
-# token:role pairs; roles are viewer (read only) and admin (also toggle repositories, re-review a commit)
+# token:role pairs; roles are viewer (read only) and admin (also toggle repositories, re-review a commit or pull request)
 API_TOKENS=$(openssl rand -hex 24):admin  go run ./cmd/server --mode=api   # from backend/
 curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/overview
 ```
@@ -87,6 +87,7 @@ Next.js (server components, no client-side data fetching): the browser only rece
 | `/` Overview | commits, average score, review cost and tokens, queue, findings by severity, per-day charts (7 / 30 / 90 days) |
 | `/commits` | every commit, newest first, filter by text, repository, status, branch, author; older pages via cursor |
 | `/commits/{id}` | latest review: summary, findings by severity, suggested changes as diffs, tokens and cost of the run; **Review again** (admin token) |
+| `/pull-requests`, `/pull-requests/{id}` | pull requests with the review of their whole diff, state (open / merged / ...), an "outdated" hint when the branch has new commits; **Review again** (admin token, open PRs only) |
 | `/repositories` | per-repository numbers and the **review on/off** switch (admin token) |
 | `/people`, `/users/{id}` | commits, average score, findings per author, weekly trend |
 
@@ -114,3 +115,15 @@ POLL_LOOKBACK=168h               # how far back the FIRST poll of a branch reads
 - The first poll of a branch reads at most `POLL_LOOKBACK` (and 500 commits); a new branch only counts what the main branch does not have. Review is off for new repositories, so those commits are stored as *skipped* and are not reviewed if you switch review on later. Switch it on first, or use a short lookback, if you want them reviewed.
 - Requires migration 0002 (`make migrate`). Needs the same access token as reviewing (`Repositories: Read`).
 - Try it without Bitbucket: `go run ./cmd/mockbitbucket -repo acme/demo`, run the worker with `BITBUCKET_BASE_URL=http://localhost:7990 POLL_REPOS=acme/demo POLL_INTERVAL=1m`, then add a commit with `curl -X POST 'localhost:7990/_mock/commit?repo=acme/demo&branch=main&message=hello'`.
+
+## Pull request reviews
+
+Besides each commit, the worker reviews every **open pull request as one diff** (all its commits together), so a problem that only shows when the commits are read together is not missed. Commit reviews are unchanged and keep their own page.
+
+- **Needs polling** (`POLL_REPOS`): pull requests are read by the poller, not from webhooks. Each round, per repository, it makes one request for the open pull requests (most recently updated first, at most 100) and stores what changed.
+- **When it reviews:** when a pull request is first seen and each time its source branch gets a new commit. Title or description edits and comments do not trigger a review. A push that arrives *while* a review runs is not lost: the review is saved against the head it started from, the pull request goes back to `pending`, and the same job runs again for the new head.
+- **What it skips:** a repository with review off (recorded as *skipped*, like commits), a pull request that is no longer open when its turn comes, and, on the first look at a repository, open pull requests not updated within `POLL_LOOKBACK`, so a backlog of stale PRs is not all sent to the model at once.
+- **Closed pull requests:** a pull request that was open and no longer is gets one lookup, so its state (merged, declined, `DELETED` when Bitbucket no longer knows it) stays right. It keeps its last review and is not reviewed again.
+- **Cost:** a pull request is reviewed once per push, so a busy branch costs more than its commits alone would. Runs are counted in the overview's usage and cost like any other review. Reviews of the same pull request are one at a time, in the same queue as commit reviews.
+- Requires migration 0003 (`make migrate`); the API and worker refuse to start without it. The access token also needs **Pull requests: Read** (Bitbucket scope `pullrequest`); without it the pull request step fails for each repository (logged) while commit polling keeps working. Not verified against real Bitbucket: the response shapes follow the public API docs and the mock.
+- Try it without Bitbucket: with the mock above, `curl -X POST 'localhost:7990/_mock/pullrequest?repo=acme/demo&source=feature/x&title=Add+x'` (the branch needs a commit first), push more commits to the branch, and `...&id=1&state=MERGED` to merge it.

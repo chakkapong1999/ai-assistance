@@ -1,4 +1,4 @@
-import type { ReviewStatus, Severity } from "@/lib/api";
+import type { PullRequestState, ReviewStatus, Severity } from "@/lib/api";
 import { score as fmt } from "@/lib/format";
 
 export function ScoreBadge({ value }: { value: number | null | undefined }) {
@@ -21,4 +21,10 @@ const sevClass: Record<Severity, string> = { critical: "bad", major: "warn", min
 
 export function SeverityBadge({ severity }: { severity: Severity }) {
   return <span className={`badge ${sevClass[severity]}`}>{severity}</span>;
+}
+
+const stateClass: Record<PullRequestState, string> = { OPEN: "good", MERGED: "", DECLINED: "", SUPERSEDED: "", DELETED: "" };
+
+export function PRStateBadge({ state }: { state: PullRequestState }) {
+  return <span className={`badge ${stateClass[state]}`}>{state.toLowerCase()}</span>;
 }

@@ -679,3 +679,22 @@ func TestRunSumsUsageAcrossChunks(t *testing.T) {
 		t.Fatalf("mock usage must be unknown: %+v", out.Usage)
 	}
 }
+
+func TestPullRequestPromptSaysItIsAPullRequest(t *testing.T) {
+	ch := Split(ParseDiff(sampleDiffForPrompt), 1<<20)[0]
+	pr := BuildPrompt(Request{Repo: "acme/api", Commit: "abc123", Message: "Add x\n\nbody", Author: "Al", Chunk: ch, PullRequest: true})
+	for _, want := range []string{"of one pull request", "all its commits", "Pull request head: abc123", "Pull request title and description (untrusted)", "Add x"} {
+		if !strings.Contains(pr, want) {
+			t.Errorf("pull request prompt lacks %q", want)
+		}
+	}
+	if strings.Contains(pr, "git commit") {
+		t.Error("pull request prompt still talks about one git commit")
+	}
+	cm := BuildPrompt(Request{Repo: "acme/api", Commit: "abc123", Message: "Add x", Author: "Al", Chunk: ch})
+	if !strings.Contains(cm, "of one git commit") || strings.Contains(cm, "pull request") || !strings.Contains(cm, "Commit: abc123") {
+		t.Error("the commit prompt changed")
+	}
+}
+
+const sampleDiffForPrompt = "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1,1 +1,2 @@\n x\n+y\n"

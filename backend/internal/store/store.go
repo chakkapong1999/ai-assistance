@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -47,6 +48,16 @@ func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 		if found == nil {
 			return fmt.Errorf("store: table %q is missing: %s", c.table, c.hint)
 		}
+	}
+	// Migration 0003 only adds columns, so a table check cannot see it.
+	var has bool
+	if err := pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		               WHERE table_schema = current_schema() AND table_name = 'pull_requests' AND column_name = 'source_hash')`).Scan(&has); err != nil {
+		return fmt.Errorf("store: check pull_requests: %w", err)
+	}
+	if !has {
+		return errors.New("store: pull_requests is out of date: run `make migrate` (migration 0003)")
 	}
 	return nil
 }

@@ -30,6 +30,11 @@ type poller struct {
 // The timer is an hour, so rounds happen only at start and when poll() asks.
 func startPoller(t *testing.T, m *mockbitbucket.Mock, repos []string, wrap func(*bitbucket.Client) PollBitbucket) *poller {
 	t.Helper()
+	return startPollerWith(t, m, repos, wrap, review.Mock{Scenario: config.ScenarioFindings})
+}
+
+func startPollerWith(t *testing.T, m *mockbitbucket.Mock, repos []string, wrap func(*bitbucket.Client) PollBitbucket, rv review.Reviewer) *poller {
+	t.Helper()
 	reset(t)
 	srv := httptest.NewServer(m.Handler())
 	t.Cleanup(srv.Close)
@@ -42,7 +47,7 @@ func startPoller(t *testing.T, m *mockbitbucket.Mock, repos []string, wrap func(
 		pb = wrap(bb)
 	}
 	rc, err := NewClient(Deps{
-		Pool: testPool, Log: quiet, Bitbucket: bb, Reviewer: review.Mock{Scenario: config.ScenarioFindings},
+		Pool: testPool, Log: quiet, Bitbucket: bb, Reviewer: rv,
 		PollInterval: 120 * time.Millisecond,
 		Poll:         &PollConfig{Repos: repos, Interval: time.Hour, Lookback: 7 * 24 * time.Hour, Bitbucket: pb},
 	})

@@ -230,4 +230,16 @@ func TestCheckSchema(t *testing.T) {
 	}
 }
 
+func TestCheckSchemaNoticesMissingPullRequestColumns(t *testing.T) {
+	ctx := context.Background()
+	if _, err := testPool.Exec(ctx, `ALTER TABLE pull_requests RENAME COLUMN source_hash TO source_hash_off`); err != nil {
+		t.Fatal(err)
+	}
+	defer testPool.Exec(ctx, `ALTER TABLE pull_requests RENAME COLUMN source_hash_off TO source_hash`)
+	err := store.CheckSchema(ctx, testPool)
+	if err == nil || !strings.Contains(err.Error(), "migration 0003") {
+		t.Fatalf("err = %v, want a hint about migration 0003", err)
+	}
+}
+
 var _ pgx.Tx // keep the import used if helpers change
