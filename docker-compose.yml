@@ -20,7 +20,7 @@ services:
     build: ./backend
     command: ["--mode=api"]
     environment:
-      DATABASE_URL: postgres://aicr:aicr@postgres:5432/aicr?sslmode=disable
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/ai_review?sslmode=disable
       BITBUCKET_WEBHOOK_SECRET: ${BITBUCKET_WEBHOOK_SECRET:-dev-secret}
       REVIEWER_MODE: mock
     ports:
@@ -33,7 +33,7 @@ services:
     build: ./backend
     command: ["--mode=worker"]
     environment:
-      DATABASE_URL: postgres://aicr:aicr@postgres:5432/aicr?sslmode=disable
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/ai_review?sslmode=disable
       BITBUCKET_TOKEN: ${BITBUCKET_TOKEN:-dev-token}
       REVIEWER_MODE: ${REVIEWER_MODE:-mock}
       MOCK_REVIEW_SCENARIO: ${MOCK_REVIEW_SCENARIO:-findings}
