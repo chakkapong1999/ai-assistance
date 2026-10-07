@@ -47,6 +47,12 @@ func extractJSON(raw []byte) []byte {
 	return []byte(s[start : end+1])
 }
 
+// clean makes model text safe for a Postgres text column: no NUL bytes and
+// valid UTF-8.
+func clean(s string) string {
+	return strings.ToValidUTF8(strings.ReplaceAll(s, "\x00", ""), "")
+}
+
 func truncateRunes(s string, n int) string {
 	if utf8.RuneCountInString(s) <= n {
 		return s
@@ -88,10 +94,10 @@ func ParseOutput(raw []byte) (Result, error) {
 		return Result{}, fmt.Errorf("%w: %v", ErrInvalidOutput, err)
 	}
 
-	res := Result{Summary: truncateRunes(strings.TrimSpace(out.Summary), maxSummaryRunes)}
+	res := Result{Summary: truncateRunes(strings.TrimSpace(clean(out.Summary)), maxSummaryRunes)}
 	for i, f := range out.Findings {
-		file := strings.TrimSpace(f.File)
-		title := strings.TrimSpace(f.Title)
+		file := strings.TrimSpace(clean(f.File))
+		title := strings.TrimSpace(clean(f.Title))
 		sev := strings.ToLower(strings.TrimSpace(f.Severity))
 		switch {
 		case file == "":
@@ -114,10 +120,10 @@ func ParseOutput(raw []byte) (Result, error) {
 			Severity:    sev,
 			Category:    normaliseCategory(f.Category),
 			Title:       truncateRunes(title, maxTitleRunes),
-			Explanation: truncateRunes(strings.TrimSpace(f.Explanation), maxExplanationRunes),
+			Explanation: truncateRunes(strings.TrimSpace(clean(f.Explanation)), maxExplanationRunes),
 		}
 		if s := f.Suggestion; s != nil && s.Original != s.Suggested && (s.Original != "" || s.Suggested != "") {
-			nf.Suggestion = &Suggestion{Original: s.Original, Suggested: s.Suggested}
+			nf.Suggestion = &Suggestion{Original: clean(s.Original), Suggested: clean(s.Suggested)}
 		}
 		res.Findings = append(res.Findings, nf)
 	}
