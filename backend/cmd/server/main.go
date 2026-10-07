@@ -109,7 +109,10 @@ func runWorker(ctx context.Context, log *slog.Logger, cfg config.Config) error {
 		return err
 	}
 
-	bb, err := bitbucket.New(bitbucket.Options{Token: cfg.BitbucketToken})
+	if cfg.BitbucketBaseURL != "" {
+		log.Warn("Bitbucket API base URL is overridden; the token is sent there", "base_url", cfg.BitbucketBaseURL)
+	}
+	bb, err := bitbucket.New(bitbucket.Options{Token: cfg.BitbucketToken, BaseURL: cfg.BitbucketBaseURL})
 	if err != nil {
 		return err
 	}

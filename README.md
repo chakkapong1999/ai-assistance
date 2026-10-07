@@ -36,3 +36,27 @@ Integration tests that need Postgres run only when `TEST_DATABASE_URL` is set
 
 Commit states: `pending` -> `running` -> `done` | `skipped` (with `review_skip_reason`) | `failed`. A commit shows
 `failed` only after its last retry; usage limits and rate limits reschedule the job instead of failing it.
+
+## Testing without Bitbucket (mock payload + mock Bitbucket)
+
+No Bitbucket account, token or real commits are needed:
+
+```sh
+# 1. a stand-in for the Bitbucket API (serves one canned diff for every commit)
+cd backend && go run ./cmd/mockbitbucket            # :7990; -diff my.diff to serve your own
+
+# 2. api + worker, reviews mocked, pointed at the stand-in
+#    (BITBUCKET_BASE_URL on the worker; any BITBUCKET_TOKEN value works against the mock)
+BITBUCKET_BASE_URL=http://localhost:7990 BITBUCKET_TOKEN=dev REVIEWER_MODE=mock \
+  DATABASE_URL=... go run ./cmd/server --mode=worker
+BITBUCKET_WEBHOOK_SECRET=dev-secret DATABASE_URL=... go run ./cmd/server --mode=api
+
+# 3. send a signed repo:push (new random commit hashes each time; payload defaults to backend/testdata/repo_push.json)
+scripts/send-webhook.sh                      # WEBHOOK_URL / WEBHOOK_SECRET / FRESH=0 to tweak
+```
+
+The first push is recorded but skipped (`repo review disabled`); run
+`UPDATE repositories SET review_enabled = true;`, send again, and the new commit is reviewed
+(`mock` model, 2 findings, one with a suggestion diff). Use your own payload by passing a file; use
+`MOCK_REVIEW_SCENARIO=clean|findings|invalid_json|usage_limit|timeout` to see each outcome.
+`BITBUCKET_BASE_URL` sends the token to that URL, so leave it unset for real use.
