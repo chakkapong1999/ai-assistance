@@ -60,3 +60,20 @@ The first push is recorded but skipped (`repo review disabled`); run
 (`mock` model, 2 findings, one with a suggestion diff). Use your own payload by passing a file; use
 `MOCK_REVIEW_SCENARIO=clean|findings|invalid_json|usage_limit|timeout` to see each outcome.
 `BITBUCKET_BASE_URL` sends the token to that URL, so leave it unset for real use.
+
+## REST API (`/api/v1`)
+
+The dashboard reads everything through a JSON API served by `--mode=api`. The contract is
+[`backend/internal/restapi/openapi.yaml`](backend/internal/restapi/openapi.yaml), also served at
+`GET /api/v1/openapi.yaml`; a test fails if the spec and the routes drift apart.
+
+```bash
+# token:role pairs; roles are viewer (read only) and admin (also toggle repositories, re-review a commit)
+API_TOKENS=$(openssl rand -hex 24):admin  go run ./cmd/server --mode=api   # from backend/
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/overview
+```
+
+- **No `API_TOKENS` = no API.** The routes are not registered and the API logs a warning; it never falls back to open access.
+- Viewer tokens never see `users.email`; writes need an admin token.
+- With `docker compose`, `API_TOKENS` defaults to `dev-admin-token-change-me:admin` and the frontend gets the same value as `API_TOKEN`. Change both for anything but local use.
+- **This authenticates the dashboard server, not the people using it.** Anyone who can open the dashboard can do what its token can. End-user login (for example Bitbucket OAuth) is not built yet; until then keep the dashboard on a trusted network.

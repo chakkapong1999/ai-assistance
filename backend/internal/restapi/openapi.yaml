@@ -1,0 +1,356 @@
+openapi: 3.0.3
+info:
+  title: AI Code Review API
+  version: 1.0.0
+  description: |
+    Read API for the dashboard, plus two admin actions. Authenticate with
+    `Authorization: Bearer <token>`; tokens and roles come from `API_TOKENS`.
+    This identifies the calling *server*, not an end user.
+    Every operation carries `x-required-role` (none | viewer | admin); a test
+    keeps it equal to what the server enforces.
+servers:
+  - url: /
+security:
+  - bearer: []
+paths:
+  /api/v1/openapi.yaml:
+    get:
+      summary: This document
+      x-required-role: none
+      security: []
+      responses:
+        "200": { description: The OpenAPI document, content: { application/yaml: { schema: { type: string } } } }
+  /api/v1/me:
+    get:
+      summary: Role of the calling token
+      x-required-role: viewer
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { type: object, required: [role], properties: { role: { type: string, enum: [viewer, admin] } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/overview:
+    get:
+      summary: Totals and a daily series for the last N UTC days
+      x-required-role: viewer
+      parameters:
+        - { $ref: "#/components/parameters/days" }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/Overview" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/repositories:
+    get:
+      summary: List repositories
+      x-required-role: viewer
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 200 }, description: Case-insensitive match on workspace/slug }
+        - { name: review_enabled, in: query, schema: { type: boolean } }
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/offset" }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/RepositoryPage" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/repositories/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+    get:
+      summary: One repository
+      x-required-role: viewer
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/Repository" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Turn automatic review of a repository on or off
+      description: Off by default, because enabling it sends code to an LLM.
+      x-required-role: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [review_enabled], additionalProperties: false, properties: { review_enabled: { type: boolean } } }
+      responses:
+        "200":
+          description: Updated repository
+          content: { application/json: { schema: { $ref: "#/components/schemas/Repository" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/commits:
+    get:
+      summary: List commits, newest first
+      description: Keyset pagination; pass `next_cursor` back as `cursor`. Each commit shows the score of its latest review.
+      x-required-role: viewer
+      parameters:
+        - { name: repo_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: author_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/ReviewStatus" } }
+        - { name: branch, in: query, schema: { type: string, maxLength: 200 }, description: Exact branch name }
+        - { name: q, in: query, schema: { type: string, maxLength: 200 }, description: Case-insensitive match on message or hash }
+        - { name: since, in: query, schema: { type: string, format: date-time }, description: committed_at >= since }
+        - { name: until, in: query, schema: { type: string, format: date-time }, description: committed_at < until }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/limit" }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/CommitPage" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/commits/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+    get:
+      summary: One commit with its latest review, findings and suggestions
+      x-required-role: viewer
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/CommitDetail" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/commits/{id}/rereview:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+    post:
+      summary: Queue the commit for another review
+      description: |
+        Sets the commit back to `pending` and enqueues a job. 409 when the
+        review is running, the repository has review disabled, or it is a
+        merge commit. The previous review stays visible until a new one is saved.
+      x-required-role: admin
+      responses:
+        "202":
+          description: Queued
+          content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [queued] } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/users:
+    get:
+      summary: List people with review statistics for the last N days
+      description: "`email` is only returned to admin tokens."
+      x-required-role: viewer
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 200 }, description: Case-insensitive match on name or nickname }
+        - { name: sort, in: query, schema: { type: string, enum: [name, commits, score], default: name } }
+        - { $ref: "#/components/parameters/days" }
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/offset" }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/UserPage" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/users/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+    get:
+      summary: One person with a weekly trend
+      description: "`email` is only returned to admin tokens. Weeks without commits are omitted from `trend`."
+      x-required-role: viewer
+      parameters:
+        - { $ref: "#/components/parameters/days" }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/UserDetail" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    id: { name: id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+    offset: { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+    days: { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 365, default: 30 }, description: Window in UTC days, today included }
+  responses:
+    BadRequest: { description: Invalid parameter, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Unauthorized: { description: Missing or invalid token, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Forbidden: { description: Token role is not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Conflict: { description: State does not allow it, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties: { code: { type: string }, message: { type: string } }
+    ReviewStatus: { type: string, enum: [pending, running, done, skipped, failed] }
+    Severity: { type: string, enum: [critical, major, minor, info] }
+    Overview:
+      type: object
+      properties:
+        days: { type: integer }
+        since: { type: string, format: date-time }
+        commits: { type: integer }
+        commits_by_status: { type: object, additionalProperties: { type: integer } }
+        reviewed: { type: integer, description: Commits that have a review }
+        avg_score: { type: number, nullable: true }
+        findings_by_severity: { type: object, additionalProperties: { type: integer }, description: Findings of each commit's latest review }
+        queue_waiting: { type: integer }
+        queue_running: { type: integer }
+        active_repositories: { type: integer }
+        active_authors: { type: integer }
+        enabled_repositories: { type: integer }
+        total_repositories: { type: integer }
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              day: { type: string, format: date }
+              commits: { type: integer }
+              reviewed: { type: integer }
+              avg_score: { type: number, nullable: true }
+    Repository:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        workspace: { type: string }
+        project_key: { type: string }
+        project_name: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        full_name: { type: string }
+        main_language: { type: string, nullable: true }
+        default_branch: { type: string, nullable: true }
+        review_enabled: { type: boolean }
+        commits: { type: integer }
+        reviewed: { type: integer }
+        avg_score: { type: number, nullable: true }
+        last_commit_at: { type: string, format: date-time, nullable: true }
+    RepositoryPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Repository" } }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+    CommitSummary:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        hash: { type: string }
+        subject: { type: string, description: First line of the message }
+        repository:
+          type: object
+          properties: { id: { type: integer, format: int64 }, full_name: { type: string } }
+        author:
+          type: object
+          description: "`id` is null for authors known only from the git author string."
+          properties:
+            id: { type: integer, format: int64, nullable: true }
+            name: { type: string }
+            avatar_url: { type: string, nullable: true }
+        branch: { type: string, nullable: true }
+        committed_at: { type: string, format: date-time }
+        review_status: { $ref: "#/components/schemas/ReviewStatus" }
+        review_skip_reason: { type: string, nullable: true }
+        files_changed: { type: integer, nullable: true }
+        additions: { type: integer, nullable: true }
+        deletions: { type: integer, nullable: true }
+        is_merge: { type: boolean }
+        score: { type: integer, nullable: true, minimum: 0, maximum: 100 }
+        findings: { type: integer }
+        reviewed_at: { type: string, format: date-time, nullable: true }
+    CommitPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/CommitSummary" } }
+        next_cursor: { type: string, nullable: true }
+    Suggestion:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        original_snippet: { type: string }
+        suggested_snippet: { type: string }
+        unified_diff: { type: string }
+        status: { type: string, enum: [open, accepted, dismissed] }
+    Finding:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        file_path: { type: string }
+        line_start: { type: integer }
+        line_end: { type: integer }
+        severity: { $ref: "#/components/schemas/Severity" }
+        category: { type: string }
+        title: { type: string }
+        explanation: { type: string }
+        suggestion: { allOf: [{ $ref: "#/components/schemas/Suggestion" }], nullable: true }
+    Review:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        model: { type: string, description: "`mock` marks results that did not come from a real model" }
+        prompt_version: { type: string }
+        score: { type: integer, nullable: true }
+        summary: { type: string }
+        duration_ms: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
+    CommitDetail:
+      allOf:
+        - { $ref: "#/components/schemas/CommitSummary" }
+        - type: object
+          properties:
+            message: { type: string }
+            reviews_count: { type: integer }
+            review: { allOf: [{ $ref: "#/components/schemas/Review" }], nullable: true }
+    User:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        display_name: { type: string }
+        nickname: { type: string, nullable: true }
+        avatar_url: { type: string, nullable: true }
+        email: { type: string, description: Admin tokens only }
+        job_title: { type: string, nullable: true }
+        department: { type: string, nullable: true }
+        linked: { type: boolean, description: False for people known only from a raw git author }
+        commits: { type: integer, description: Commits in the window }
+        reviewed: { type: integer }
+        avg_score: { type: number, nullable: true, description: Mean of each commit's latest review score }
+        findings: { type: integer }
+    UserPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/User" } }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+    UserDetail:
+      allOf:
+        - { $ref: "#/components/schemas/User" }
+        - type: object
+          properties:
+            days: { type: integer }
+            trend:
+              type: array
+              items:
+                type: object
+                properties:
+                  week: { type: string, format: date, description: Monday of the ISO week (UTC) }
+                  commits: { type: integer }
+                  reviewed: { type: integer }
+                  avg_score: { type: number, nullable: true }

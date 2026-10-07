@@ -46,10 +46,56 @@ type Config struct {
 	// For local testing against cmd/mockbitbucket; the token is sent to this URL.
 	BitbucketBaseURL string
 
+	// APITokens guard the dashboard REST API (/api/v1). Empty = API not served.
+	APITokens []APIToken
+
 	ReviewerMode       string
 	MockReviewScenario string
 	MockReviewDelay    time.Duration
 	ClaudeBin          string
+}
+
+// Roles of an API token. viewer = read only; admin = may also change settings.
+const (
+	RoleViewer = "viewer"
+	RoleAdmin  = "admin"
+)
+
+// MinTokenLen is the shortest accepted API token.
+const MinTokenLen = 16
+
+type APIToken struct {
+	Token string
+	Role  string
+}
+
+// parseAPITokens parses "token:role,token:role". Errors never include the
+// token text, so a bad value does not end up in logs.
+func parseAPITokens(raw string) ([]APIToken, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var out []APIToken
+	seen := map[string]bool{}
+	for i, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		idx := strings.LastIndex(part, ":")
+		if idx < 0 {
+			return nil, fmt.Errorf("API_TOKENS entry %d: want token:role", i+1)
+		}
+		tok, role := strings.TrimSpace(part[:idx]), strings.TrimSpace(part[idx+1:])
+		switch {
+		case role != RoleViewer && role != RoleAdmin:
+			return nil, fmt.Errorf("API_TOKENS entry %d: role must be viewer or admin", i+1)
+		case len(tok) < MinTokenLen:
+			return nil, fmt.Errorf("API_TOKENS entry %d: token must be at least %d characters", i+1, MinTokenLen)
+		case seen[tok]:
+			return nil, fmt.Errorf("API_TOKENS entry %d: duplicate token", i+1)
+		}
+		seen[tok] = true
+		out = append(out, APIToken{Token: tok, Role: role})
+	}
+	return out, nil
 }
 
 // Load builds a Config from getenv (os.Getenv in production, a map lookup in
@@ -85,6 +131,12 @@ func Load(mode string, getenv func(string) string) (Config, error) {
 		default:
 			c.MockReviewDelay = parsed
 		}
+	}
+
+	if toks, err := parseAPITokens(getenv("API_TOKENS")); err != nil {
+		errs = append(errs, err)
+	} else {
+		c.APITokens = toks
 	}
 
 	errs = append(errs, c.validate()...)
