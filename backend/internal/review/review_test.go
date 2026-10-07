@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -698,3 +699,18 @@ func TestPullRequestPromptSaysItIsAPullRequest(t *testing.T) {
 }
 
 const sampleDiffForPrompt = "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1,1 +1,2 @@\n x\n+y\n"
+
+func TestCLIFailureDetailIsNeverEmpty(t *testing.T) {
+	var env cliEnvelope
+	_ = json.Unmarshal([]byte(`{"is_error":true,"subtype":"error_max_turns","result":""}`), &env)
+	if got := cliFailureDetail(env, nil, RunResult{ExitCode: 1}); !strings.Contains(got, "error_max_turns") {
+		t.Fatalf("subtype missing: %q", got)
+	}
+	got := cliFailureDetail(cliEnvelope{}, errors.New("x"), RunResult{Stdout: []byte("Error: not logged in")})
+	if !strings.Contains(got, "not logged in") {
+		t.Fatalf("stdout missing: %q", got)
+	}
+	if got := cliFailureDetail(cliEnvelope{}, errors.New("x"), RunResult{}); got == "" {
+		t.Fatal("empty message")
+	}
+}

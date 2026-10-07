@@ -126,7 +126,7 @@ func (c *ClaudeCLI) Review(ctx context.Context, req Request) (Result, error) {
 		if ule, ok := ClassifyUsageLimit(text, c.now()); ok {
 			return Result{}, ule
 		}
-		return Result{}, fmt.Errorf("review: claude exited %d: %s", rr.ExitCode, truncateRunes(strings.TrimSpace(env.Result+" "+string(rr.Stderr)), 500))
+		return Result{}, fmt.Errorf("review: claude exited %d: %s", rr.ExitCode, cliFailureDetail(env, envErr, rr))
 	}
 	if envErr != nil {
 		return Result{}, fmt.Errorf("%w: CLI output is not JSON: %v", ErrInvalidOutput, envErr)
@@ -139,6 +139,24 @@ func (c *ClaudeCLI) Review(ctx context.Context, req Request) (Result, error) {
 	res.Model = ModelClaudeCLI
 	res.Usage = env.usage()
 	return res, nil
+}
+
+// cliFailureDetail says why the CLI failed. The CLI often reports the reason
+// only in the JSON on stdout (is_error with an empty result and a subtype such
+// as error_max_turns), so an empty message would hide it.
+func cliFailureDetail(env cliEnvelope, envErr error, rr RunResult) string {
+	msg := strings.TrimSpace(env.Result + " " + string(rr.Stderr))
+	if env.Subtype != "" {
+		msg = strings.TrimSpace("[" + env.Subtype + "] " + msg)
+	}
+	if msg == "" {
+		// nothing parsed: show the start of stdout, which is where the CLI printed the reason
+		msg = "no message; stdout: " + strings.TrimSpace(string(rr.Stdout))
+		if envErr != nil && len(rr.Stdout) == 0 {
+			msg = "no output at all (does the CLI run here and is it logged in?)"
+		}
+	}
+	return truncateRunes(msg, 500)
 }
 
 var (
