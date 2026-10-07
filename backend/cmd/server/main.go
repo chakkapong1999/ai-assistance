@@ -49,13 +49,16 @@ func main() {
 func runAPI(ctx context.Context, log *slog.Logger, cfg config.Config) error {
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(),
+		Handler:           httpapi.NewRouter(httpapi.Deps{WebhookSecret: []byte(cfg.BitbucketWebhookSecret)}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
 	log.Info("api listening", "addr", cfg.HTTPAddr)
+	// The webhook route is registered once a Postgres-backed httpapi.EventStore
+	// is passed in Deps (needs pgx and River); until then only /healthz exists.
+	log.Warn("webhook route disabled: no event store wired yet")
 
 	select {
 	case err := <-errc:
