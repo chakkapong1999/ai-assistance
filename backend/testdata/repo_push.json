@@ -1,0 +1,33 @@
+{
+  "actor": {"uuid": "{u-1}", "account_id": "557058:aaaa", "display_name": "Max", "nickname": "max"},
+  "repository": {
+    "uuid": "{r-1}",
+    "name": "loan-service",
+    "full_name": "acme/loan-service",
+    "project": {"uuid": "{p-1}", "key": "LOAN", "name": "Loan"},
+    "workspace": {"uuid": "{w-1}", "slug": "acme", "name": "Acme"}
+  },
+  "push": {
+    "changes": [
+      {
+        "created": false, "closed": false, "forced": false, "truncated": false,
+        "old": {"type": "branch", "name": "feature/x", "target": {"hash": "1111111"}},
+        "new": {"type": "branch", "name": "feature/x", "target": {"hash": "3333333"}},
+        "commits": [
+          {"hash": "3333333", "message": "merge main", "date": "2026-10-07T07:00:00+00:00",
+           "parents": [{"hash": "2222222"}, {"hash": "9999999"}],
+           "author": {"raw": "Max <max@example.com>", "user": {"uuid": "{u-1}", "account_id": "557058:aaaa", "display_name": "Max"}}},
+          {"hash": "2222222", "message": "fix rounding", "date": "2026-10-07T06:00:00+00:00",
+           "parents": [{"hash": "1111111"}],
+           "author": {"raw": "Somebody <s@example.com>"}}
+        ]
+      },
+      {
+        "created": false, "closed": true, "forced": false, "truncated": false,
+        "old": {"type": "branch", "name": "old-branch", "target": {"hash": "4444444"}},
+        "new": null,
+        "commits": []
+      }
+    ]
+  }
+}

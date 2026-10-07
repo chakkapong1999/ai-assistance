@@ -9,7 +9,7 @@ import (
 
 func TestHealthz(t *testing.T) {
 	rec := httptest.NewRecorder()
-	NewRouter().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	NewRouter(Deps{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -24,7 +24,7 @@ func TestHealthz(t *testing.T) {
 
 func TestUnknownRouteIs404(t *testing.T) {
 	rec := httptest.NewRecorder()
-	NewRouter().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
+	NewRouter(Deps{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
@@ -32,8 +32,16 @@ func TestUnknownRouteIs404(t *testing.T) {
 
 func TestHealthzRejectsPost(t *testing.T) {
 	rec := httptest.NewRecorder()
-	NewRouter().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/healthz", nil))
+	NewRouter(Deps{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/healthz", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+func TestWebhookRouteOnlyExistsWithAStore(t *testing.T) {
+	rec := httptest.NewRecorder()
+	NewRouter(Deps{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/webhooks/bitbucket", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("without a store the route must not exist, got %d", rec.Code)
 	}
 }
