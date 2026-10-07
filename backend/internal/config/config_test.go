@@ -136,3 +136,38 @@ func TestBitbucketBaseURLOverride(t *testing.T) {
 		}
 	}
 }
+
+func TestAPITokens(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_WEBHOOK_SECRET": "s"}
+	load := func(tokens string) (Config, error) {
+		e := map[string]string{"API_TOKENS": tokens}
+		for k, v := range base {
+			e[k] = v
+		}
+		return Load(ModeAPI, env(e))
+	}
+
+	c, err := load(" aaaaaaaaaaaaaaaa:admin , bbbbbbbbbbbbbbbb:viewer ")
+	if err != nil || len(c.APITokens) != 2 || c.APITokens[0] != (APIToken{"aaaaaaaaaaaaaaaa", RoleAdmin}) || c.APITokens[1].Role != RoleViewer {
+		t.Fatalf("got %+v, %v", c.APITokens, err)
+	}
+	if c, err := load(""); err != nil || len(c.APITokens) != 0 {
+		t.Fatalf("unset tokens must be allowed (API disabled): %+v, %v", c.APITokens, err)
+	}
+
+	secret := "supersecrettoken1234"
+	for name, v := range map[string]string{
+		"no role":    secret,
+		"bad role":   secret + ":root",
+		"short":      "short:admin",
+		"duplicate":  secret + ":admin," + secret + ":viewer",
+		"empty role": secret + ":",
+	} {
+		_, err := load(v)
+		if err == nil {
+			t.Errorf("%s: want an error", name)
+		} else if strings.Contains(err.Error(), secret) {
+			t.Errorf("%s: error leaks the token: %v", name, err)
+		}
+	}
+}

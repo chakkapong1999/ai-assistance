@@ -19,6 +19,7 @@ import (
 	"github.com/chakkapong1999/ai-assistance/backend/internal/bitbucket"
 	"github.com/chakkapong1999/ai-assistance/backend/internal/config"
 	"github.com/chakkapong1999/ai-assistance/backend/internal/httpapi"
+	"github.com/chakkapong1999/ai-assistance/backend/internal/restapi"
 	"github.com/chakkapong1999/ai-assistance/backend/internal/review"
 	"github.com/chakkapong1999/ai-assistance/backend/internal/store"
 	"github.com/chakkapong1999/ai-assistance/backend/internal/worker"
@@ -68,12 +69,19 @@ func runAPI(ctx context.Context, log *slog.Logger, cfg config.Config) error {
 		return err
 	}
 
+	deps := httpapi.Deps{
+		WebhookSecret: []byte(cfg.BitbucketWebhookSecret),
+		Events:        store.NewEvents(pool, rc),
+	}
+	if h := restapi.New(store.NewDashboard(pool, rc), cfg.APITokens, log); h != nil {
+		deps.Dashboard = h
+	} else {
+		log.Warn("API_TOKENS is not set: the dashboard REST API (/api/v1) is disabled")
+	}
+
 	srv := &http.Server{
-		Addr: cfg.HTTPAddr,
-		Handler: httpapi.NewRouter(httpapi.Deps{
-			WebhookSecret: []byte(cfg.BitbucketWebhookSecret),
-			Events:        store.NewEvents(pool, rc),
-		}),
+		Addr:              cfg.HTTPAddr,
+		Handler:           httpapi.NewRouter(deps),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

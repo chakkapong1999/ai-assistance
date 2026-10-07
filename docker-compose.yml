@@ -22,6 +22,8 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/ai_review?sslmode=disable
       BITBUCKET_WEBHOOK_SECRET: ${BITBUCKET_WEBHOOK_SECRET:-dev-secret}
+      # token:role[,token:role] - dev default only, set your own outside local use
+      API_TOKENS: ${API_TOKENS:-dev-admin-token-change-me:admin}
       REVIEWER_MODE: mock
     ports:
       - "8080:8080"
@@ -46,6 +48,7 @@ services:
     build: ./frontend
     environment:
       API_BASE_URL: http://backend-api:8080
+      API_TOKEN: ${API_TOKEN:-dev-admin-token-change-me}
     ports:
       - "3000:3000"
     depends_on:

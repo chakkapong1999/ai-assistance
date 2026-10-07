@@ -11,6 +11,9 @@ import (
 type Deps struct {
 	WebhookSecret []byte
 	Events        EventStore
+	// Dashboard serves everything under /api/v1/; nil leaves those routes
+	// unregistered.
+	Dashboard http.Handler
 	// MaxWebhookBody caps the request body in bytes; zero means the default.
 	MaxWebhookBody int64
 }
@@ -21,6 +24,9 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("GET /healthz", healthz)
 	if d.Events != nil {
 		mux.Handle("POST /webhooks/bitbucket", newWebhookHandler(d))
+	}
+	if d.Dashboard != nil {
+		mux.Handle("/api/v1/", d.Dashboard)
 	}
 	return mux
 }
