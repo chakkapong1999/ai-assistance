@@ -40,6 +40,9 @@ services:
       REVIEWER_MODE: ${REVIEWER_MODE:-mock}
       MOCK_REVIEW_SCENARIO: ${MOCK_REVIEW_SCENARIO:-findings}
       MOCK_REVIEW_DELAY: ${MOCK_REVIEW_DELAY:-2s}
+      POLL_REPOS: ${POLL_REPOS:-}
+      POLL_INTERVAL: ${POLL_INTERVAL:-5m}
+      POLL_LOOKBACK: ${POLL_LOOKBACK:-168h}
     depends_on:
       postgres:
         condition: service_healthy

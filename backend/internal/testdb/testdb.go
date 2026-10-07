@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
@@ -66,12 +67,19 @@ func run(m *testing.M, url string, onReady func(*pgxpool.Pool)) int {
 	}
 
 	_, thisFile, _, _ := runtime.Caller(0)
-	sql, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "..", "..", "migrations", "0001_init.up.sql"))
-	if err != nil {
-		return fail("read migration: %v", err)
+	files, err := filepath.Glob(filepath.Join(filepath.Dir(thisFile), "..", "..", "migrations", "*.up.sql"))
+	if err != nil || len(files) == 0 {
+		return fail("no migrations found (%v)", err)
 	}
-	if _, err := pool.Exec(ctx, string(sql)); err != nil {
-		return fail("apply 0001: %v", err)
+	sort.Strings(files)
+	for _, f := range files {
+		sql, err := os.ReadFile(f)
+		if err != nil {
+			return fail("read migration: %v", err)
+		}
+		if _, err := pool.Exec(ctx, string(sql)); err != nil {
+			return fail("apply %s: %v", filepath.Base(f), err)
+		}
 	}
 	mig, err := rivermigrate.New(riverpgxv5.New(pool), nil)
 	if err == nil {

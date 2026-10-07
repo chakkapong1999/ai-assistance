@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -48,6 +49,14 @@ type Config struct {
 
 	// APITokens guard the dashboard REST API (/api/v1). Empty = API not served.
 	APITokens []APIToken
+
+	// Polling (worker): look for new commits in these repositories without a
+	// webhook. Entries are "workspace/repo" or "workspace/*" (every repository
+	// of a workspace the token can see). Empty = polling is off.
+	PollRepos    []string
+	PollInterval time.Duration
+	// PollLookback bounds how far back the first poll of a branch reads.
+	PollLookback time.Duration
 
 	ReviewerMode       string
 	MockReviewScenario string
@@ -98,6 +107,35 @@ func parseAPITokens(raw string) ([]APIToken, error) {
 	return out, nil
 }
 
+const (
+	defaultPollInterval = 5 * time.Minute
+	defaultPollLookback = 7 * 24 * time.Hour
+	// MinPollInterval protects the Bitbucket API quota.
+	MinPollInterval = time.Minute
+)
+
+var pollRepoRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*/([A-Za-z0-9][A-Za-z0-9._-]*|\*)$`)
+
+// parsePollRepos parses "ws/repo,ws/*"; duplicates are dropped.
+func parsePollRepos(raw string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if !pollRepoRe.MatchString(part) {
+			return nil, fmt.Errorf("POLL_REPOS entry %q must look like workspace/repo or workspace/*", part)
+		}
+		if !seen[part] {
+			seen[part] = true
+			out = append(out, part)
+		}
+	}
+	return out, nil
+}
+
 // Load builds a Config from getenv (os.Getenv in production, a map lookup in
 // tests) and the run mode, then validates it for that mode.
 func Load(mode string, getenv func(string) string) (Config, error) {
@@ -130,6 +168,31 @@ func Load(mode string, getenv func(string) string) (Config, error) {
 			errs = append(errs, errors.New("MOCK_REVIEW_DELAY must not be negative"))
 		default:
 			c.MockReviewDelay = parsed
+		}
+	}
+
+	if repos, err := parsePollRepos(getenv("POLL_REPOS")); err != nil {
+		errs = append(errs, err)
+	} else {
+		c.PollRepos = repos
+	}
+	c.PollInterval = defaultPollInterval
+	c.PollLookback = defaultPollLookback
+	for _, d := range []struct {
+		key string
+		dst *time.Duration
+		min time.Duration
+	}{{"POLL_INTERVAL", &c.PollInterval, MinPollInterval}, {"POLL_LOOKBACK", &c.PollLookback, time.Hour}} {
+		if v := get(d.key, ""); v != "" {
+			parsed, err := time.ParseDuration(v)
+			switch {
+			case err != nil:
+				errs = append(errs, fmt.Errorf("%s: %w (use a Go duration such as 5m or 168h)", d.key, err))
+			case parsed < d.min:
+				errs = append(errs, fmt.Errorf("%s must be at least %s", d.key, d.min))
+			default:
+				*d.dst = parsed
+			}
 		}
 	}
 

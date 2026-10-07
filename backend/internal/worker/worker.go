@@ -36,6 +36,9 @@ type Deps struct {
 	Limits    review.Limits
 
 	// Tuning; zero values give the production defaults.
+	// Poll turns on polling Bitbucket for commits (nil = webhooks only).
+	Poll *PollConfig
+
 	WebhookWorkers int           // default 4
 	PollInterval   time.Duration // how often idle queues look for jobs; default River's (1s)
 }
@@ -65,10 +68,29 @@ func NewClient(d Deps) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &processWebhookWorker{d: d, syncer: store.NewSyncer(d.Pool)})
 	river.AddWorker(workers, &reviewCommitWorker{d: d})
+	// Always registered, so a poll job left in the queue after polling was
+	// switched off is cancelled instead of failing as an unknown kind.
+	river.AddWorker(workers, &pollReposWorker{d: d, syncer: store.NewSyncer(d.Pool)})
+
+	var periodic []*river.PeriodicJob
+	if d.Poll.enabled() {
+		if d.Poll.Interval <= 0 {
+			return nil, errors.New("worker: Poll.Interval must be positive")
+		}
+		if d.Poll.Lookback <= 0 {
+			return nil, errors.New("worker: Poll.Lookback must be positive")
+		}
+		periodic = append(periodic, river.NewPeriodicJob(
+			river.PeriodicInterval(d.Poll.Interval),
+			func() (river.JobArgs, *river.InsertOpts) { return jobs.PollReposArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: true},
+		))
+	}
 
 	return river.NewClient(riverpgxv5.New(d.Pool), &river.Config{
-		Logger:  d.Log,
-		Workers: workers,
+		PeriodicJobs: periodic,
+		Logger:       d.Log,
+		Workers:      workers,
 		Queues: map[string]river.QueueConfig{
 			jobs.QueueDefault: {MaxWorkers: d.WebhookWorkers},
 			jobs.QueueReview:  {MaxWorkers: 1},

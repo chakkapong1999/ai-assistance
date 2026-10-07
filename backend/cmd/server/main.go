@@ -128,9 +128,12 @@ func runWorker(ctx context.Context, log *slog.Logger, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	rc, err := worker.NewClient(worker.Deps{
-		Pool: pool, Log: log, Bitbucket: bb, Reviewer: reviewer, Limits: review.DefaultLimits(),
-	})
+	deps := worker.Deps{Pool: pool, Log: log, Bitbucket: bb, Reviewer: reviewer, Limits: review.DefaultLimits()}
+	if len(cfg.PollRepos) > 0 {
+		deps.Poll = &worker.PollConfig{Repos: cfg.PollRepos, Interval: cfg.PollInterval, Lookback: cfg.PollLookback, Bitbucket: bb}
+		log.Info("polling enabled", "repos", cfg.PollRepos, "interval", cfg.PollInterval, "lookback", cfg.PollLookback)
+	}
+	rc, err := worker.NewClient(deps)
 	if err != nil {
 		return err
 	}
