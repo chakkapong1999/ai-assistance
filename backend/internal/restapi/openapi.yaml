@@ -41,6 +41,15 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Overview" } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/health:
+    get:
+      summary: Is the pipeline moving? What is waiting, what lost its job, when the worker last did its periodic work
+      x-required-role: viewer
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/repositories:
     get:
       summary: List repositories
@@ -401,6 +410,48 @@ components:
         suggested_snippet: { type: string }
         unified_diff: { type: string }
         status: { type: string, enum: [open, accepted, dismissed] }
+    Health:
+      type: object
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        problems: { type: array, items: { type: string }, description: One sentence per problem, written for a person }
+        checked_at: { type: string, format: date-time }
+        webhooks:
+          type: object
+          properties:
+            unprocessed: { type: integer }
+            oldest_age_seconds: { type: integer, nullable: true }
+        jobs:
+          type: object
+          description: Webhook and review jobs
+          properties:
+            waiting: { type: integer }
+            running: { type: integer }
+            retrying: { type: integer }
+            snoozed: { type: integer, description: Waiting for a rate limit or usage limit to pass }
+            discarded_24h: { type: integer }
+            oldest_waiting_seconds: { type: integer, nullable: true }
+        stuck:
+          type: object
+          description: Marked as waiting or running but with no job behind them. The worker's next background check queues them again.
+          properties:
+            commits: { type: integer }
+            pull_requests: { type: integer }
+        last_poll:
+          nullable: true
+          type: object
+          properties:
+            at: { type: string, format: date-time }
+            ok: { type: boolean }
+        last_reconcile:
+          nullable: true
+          type: object
+          properties:
+            at: { type: string, format: date-time }
+            events: { type: integer }
+            commits: { type: integer }
+            pull_requests: { type: integer }
+            gave_up: { type: integer }
     Finding:
       type: object
       properties:

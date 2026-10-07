@@ -209,6 +209,27 @@ func TestPollConfig(t *testing.T) {
 	}
 }
 
+func TestReconcileInterval(t *testing.T) {
+	load := func(v string) (Config, error) {
+		e := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t"}
+		if v != "" {
+			e["RECONCILE_INTERVAL"] = v
+		}
+		return Load(ModeWorker, env(e))
+	}
+	if c, err := load(""); err != nil || c.ReconcileInterval != 5*time.Minute {
+		t.Fatalf("default: %v %v", c.ReconcileInterval, err)
+	}
+	if c, err := load("90s"); err != nil || c.ReconcileInterval != 90*time.Second {
+		t.Fatalf("parsed: %v %v", c.ReconcileInterval, err)
+	}
+	for _, v := range []string{"often", "10s"} {
+		if _, err := load(v); err == nil {
+			t.Errorf("%q: want an error", v)
+		}
+	}
+}
+
 func TestReviewNewReposDefaultsToOnAndCanBeSwitchedOff(t *testing.T) {
 	base := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t"}
 	with := func(v string) map[string]string {

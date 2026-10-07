@@ -107,6 +107,16 @@ A repository is created automatically the first time the worker sees it (a webho
 - Repositories that already exist keep their current setting; changing the variable affects only repositories created afterwards.
 - Commits that arrived while a repository had review off stay *skipped*; use **Review again** on them if you want them reviewed.
 
+## Health and self-repair
+
+Jobs can be lost (a database restore, a queue purge, a crash between two writes). The worker therefore checks every `RECONCILE_INTERVAL` (default 5m, min 1m; it also runs once at start):
+
+- **Webhook deliveries** stored but never processed, with no job left for them, are queued again. A delivery whose job was cancelled is treated as bad input and left alone.
+- **Commits and open pull requests** still *pending* or *running* after 10 minutes with no live job are queued again; one that has already had 4 jobs is marked *failed* ("use Review again"). Repositories with review switched off and merge commits are marked *skipped* instead.
+- Work is only touched when no job exists for it, and each pass runs in one transaction, so it never double-queues a review that is simply slow.
+
+`GET /api/v1/health` (viewer token) answers "is the pipeline moving?": unprocessed deliveries and their age, jobs waiting/running/retrying, failed jobs in the last 24h, commits and pull requests without a job, the last polling round and the last reconcile pass with its counts. `status` is `degraded` with plain-language `problems` when something has waited too long.
+
 ## Polling instead of (or besides) webhooks
 
 If you cannot register a webhook, the worker can look for new commits itself:

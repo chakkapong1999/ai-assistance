@@ -91,6 +91,15 @@ func (s *server) overview(w http.ResponseWriter, r *http.Request, _ string) {
 	writeJSON(w, http.StatusOK, o)
 }
 
+func (s *server) health(w http.ResponseWriter, r *http.Request, _ string) {
+	h, err := s.data.Health(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h)
+}
+
 type page[T any] struct {
 	Items  []T `json:"items"`
 	Total  int `json:"total"`
