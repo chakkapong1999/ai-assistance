@@ -3,9 +3,9 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: aicr
-      POSTGRES_PASSWORD: aicr
-      POSTGRES_DB: aicr
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_review
     ports:
       - "5432:5432"
     volumes:
