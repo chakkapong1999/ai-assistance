@@ -24,7 +24,14 @@ type Outcome struct {
 	Skipped    []Skipped
 	Dropped    int // findings discarded because they did not match the diff
 	Chunks     int
+
+	// Whole-commit stats, counting files that were skipped too.
+	Files, Additions, Deletions int
 }
+
+// PromptVersion is stored with every review so scores can be compared across
+// prompt changes. Bump it whenever promptInstructions changes.
+const PromptVersion = "v1"
 
 // Run reviews one commit. It stops at the first chunk error and returns it
 // unchanged in kind (errors.Is / errors.As still work) so the caller can
@@ -46,7 +53,19 @@ func Run(ctx context.Context, rv Reviewer, in Input, lim Limits) (Outcome, error
 	}
 
 	kept, skipped := Filter(files, lim)
-	out := Outcome{Skipped: skipped}
+	out := Outcome{Skipped: skipped, Files: len(files)}
+	for _, f := range files {
+		for _, h := range f.Hunks {
+			for _, l := range h.Lines {
+				switch l.Kind {
+				case '+':
+					out.Additions++
+				case '-':
+					out.Deletions++
+				}
+			}
+		}
+	}
 	if len(kept) == 0 {
 		return out, nil
 	}

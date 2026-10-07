@@ -6,7 +6,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,63 +17,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
-	"github.com/riverqueue/river/rivermigrate"
 
 	"github.com/chakkapong1999/ai-assistance/backend/internal/httpapi"
 	"github.com/chakkapong1999/ai-assistance/backend/internal/store"
+	"github.com/chakkapong1999/ai-assistance/backend/internal/testdb"
 )
 
 const secret = "test-secret"
 
 var testPool *pgxpool.Pool
 
-// TestMain needs a real Postgres: set TEST_DATABASE_URL to an EMPTY database
-// whose name ends in "_test". It is wiped (public schema dropped) on every
-// run, so the suffix is checked to avoid pointing it at real data. Without the
-// variable the package's tests are skipped.
-func TestMain(m *testing.M) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		fmt.Println("TEST_DATABASE_URL not set: skipping store integration tests")
-		os.Exit(0)
-	}
-	ctx := context.Background()
-	pool, err := store.Open(ctx, url)
-	if err != nil {
-		fmt.Println("open:", err)
-		os.Exit(1)
-	}
-	var db string
-	if err := pool.QueryRow(ctx, `SELECT current_database()`).Scan(&db); err != nil || !strings.HasSuffix(db, "_test") {
-		fmt.Printf("refusing to run: database %q does not end in _test (%v)\n", db, err)
-		os.Exit(1)
-	}
-	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
-		fmt.Println("reset:", err)
-		os.Exit(1)
-	}
-	sql, err := os.ReadFile(filepath.Join("..", "..", "migrations", "0001_init.up.sql"))
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	if _, err := pool.Exec(ctx, string(sql)); err != nil {
-		fmt.Println("apply 0001:", err)
-		os.Exit(1)
-	}
-	mig, err := rivermigrate.New(riverpgxv5.New(pool), nil)
-	if err == nil {
-		_, err = mig.Migrate(ctx, rivermigrate.DirectionUp, nil)
-	}
-	if err != nil {
-		fmt.Println("river migrate:", err)
-		os.Exit(1)
-	}
-	testPool = pool
-	code := m.Run()
-	pool.Close()
-	os.Exit(code)
-}
+func TestMain(m *testing.M) { testdb.Main(m, func(p *pgxpool.Pool) { testPool = p }) }
 
 func newServer(t *testing.T) (*httptest.Server, *store.Events) {
 	t.Helper()

@@ -1,5 +1,5 @@
-// Package ingest turns a stored repo:push webhook into database rows. The
-// worker (M3) calls Handle for each process_webhook job.
+// Package ingest decides which commits a stored repo:push webhook brought.
+// The worker feeds the plan to store.Syncer.SyncPushTx.
 package ingest
 
 import (
@@ -19,11 +19,6 @@ const MaxCommitsPerChange = 500
 // CommitLister is the part of the Bitbucket client Plan needs.
 type CommitLister interface {
 	ListCommits(ctx context.Context, workspace, repo, include, exclude string) ([]webhook.Commit, error)
-}
-
-// Syncer is the part of store.Syncer Handle needs.
-type Syncer interface {
-	SyncPush(ctx context.Context, in store.PushInput) (store.PushResult, error)
 }
 
 // Plan decides which commits a push brought. Payloads list at most a handful
@@ -69,17 +64,4 @@ func Plan(ctx context.Context, log *slog.Logger, bb CommitLister, ev webhook.Pus
 		in.Branches = append(in.Branches, store.BranchCommits{Branch: branch, Commits: commits})
 	}
 	return in, nil
-}
-
-// Handle parses a stored payload, plans it and writes it to the database.
-func Handle(ctx context.Context, log *slog.Logger, bb CommitLister, s Syncer, payload []byte) (store.PushResult, error) {
-	ev, err := webhook.ParsePush(payload)
-	if err != nil {
-		return store.PushResult{}, err
-	}
-	in, err := Plan(ctx, log, bb, ev)
-	if err != nil {
-		return store.PushResult{}, err
-	}
-	return s.SyncPush(ctx, in)
 }

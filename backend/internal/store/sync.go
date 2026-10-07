@@ -55,6 +55,26 @@ func NewSyncer(pool *pgxpool.Pool) *Syncer { return &Syncer{pool: pool} }
 // replaying the same push returns no NewCommits and changes nothing, which is
 // what lets River retry the job safely.
 func (s *Syncer) SyncPush(ctx context.Context, in PushInput) (PushResult, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return PushResult{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	res, err := s.SyncPushTx(ctx, tx, in)
+	if err != nil {
+		return PushResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return PushResult{}, err
+	}
+	return res, nil
+}
+
+// SyncPushTx does the same inside the caller's transaction, so the worker can
+// enqueue review jobs atomically with the commits they refer to: a commit is
+// never stored without its job (or skip decision), and never queued twice.
+func (s *Syncer) SyncPushTx(ctx context.Context, tx pgx.Tx, in PushInput) (PushResult, error) {
 	repo := in.Repo
 	if repo.UUID == "" {
 		return PushResult{}, errors.New("sync: repository has no uuid")
@@ -62,12 +82,6 @@ func (s *Syncer) SyncPush(ctx context.Context, in PushInput) (PushResult, error)
 	if repo.Workspace == nil || repo.Workspace.UUID == "" {
 		return PushResult{}, errors.New("sync: repository has no workspace")
 	}
-
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return PushResult{}, err
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
 
 	var wsID int64
 	if err := tx.QueryRow(ctx, `
@@ -140,9 +154,6 @@ func (s *Syncer) SyncPush(ctx context.Context, in PushInput) (PushResult, error)
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return PushResult{}, err
-	}
 	return res, nil
 }
 
