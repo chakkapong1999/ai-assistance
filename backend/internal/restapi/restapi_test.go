@@ -679,3 +679,64 @@ func TestUserDetailTrend(t *testing.T) {
 		}
 	}
 }
+
+func TestOverviewUsage(t *testing.T) {
+	e := setup(t)
+	// Pin run times explicitly instead of relying on the clock.
+	exec(t, `UPDATE reviews SET created_at = now() - interval '3 days'`) // everything old
+	exec(t, `UPDATE reviews SET created_at = now(), tokens_in = 1000, tokens_out = 100, cost_usd = 0.25
+	         WHERE commit_id = $1`, e.ids["c1"])
+	exec(t, `UPDATE reviews SET created_at = now(), tokens_in = 3000, tokens_out = 300, cost_usd = 0.75
+	         WHERE commit_id = $1 AND score = 100`, e.ids["c2"]) // a re-review: its cost counts too
+	exec(t, `UPDATE reviews SET tokens_in = 9999, tokens_out = 999, cost_usd = 9 WHERE commit_id = $1 AND score = 10`, e.ids["c2"]) // 3 days old
+
+	var o struct {
+		Usage struct {
+			Runs      int      `json:"runs"`
+			Measured  int      `json:"measured_runs"`
+			TokensIn  int64    `json:"tokens_in"`
+			TokensOut int64    `json:"tokens_out"`
+			CostUSD   float64  `json:"cost_usd"`
+			Avg       *float64 `json:"avg_cost_usd"`
+		} `json:"usage"`
+		Series []struct {
+			Day  string  `json:"day"`
+			Cost float64 `json:"cost_usd"`
+		} `json:"series"`
+	}
+	e.get(t, "/api/v1/overview?days=1", &o)
+	u := o.Usage
+	if u.Runs != 2 || u.Measured != 2 || u.TokensIn != 4000 || u.TokensOut != 400 || u.CostUSD != 1 || u.Avg == nil || *u.Avg != 0.5 {
+		t.Errorf("1-day usage = %+v", u)
+	}
+	if len(o.Series) != 1 || o.Series[0].Cost != 1 {
+		t.Errorf("series cost = %+v", o.Series)
+	}
+	e.get(t, "/api/v1/overview?days=7", &o)
+	if o.Usage.Runs != 3 || o.Usage.CostUSD != 10 {
+		t.Errorf("7-day usage = %+v", o.Usage)
+	}
+
+	// Unmeasured (mock) runs count as runs but add nothing and do not skew the average.
+	exec(t, `UPDATE reviews SET tokens_in = NULL, tokens_out = NULL, cost_usd = NULL WHERE commit_id = $1 AND score = 100`, e.ids["c2"])
+	e.get(t, "/api/v1/overview?days=1", &o)
+	if o.Usage.Runs != 2 || o.Usage.Measured != 1 || o.Usage.CostUSD != 0.25 || o.Usage.Avg == nil || *o.Usage.Avg != 0.25 {
+		t.Errorf("with an unmeasured run = %+v", o.Usage)
+	}
+
+	// The commit detail shows the run's own numbers, null when unmeasured.
+	var d struct {
+		Review struct {
+			TokensIn *int     `json:"tokens_in"`
+			Cost     *float64 `json:"cost_usd"`
+		} `json:"review"`
+	}
+	e.get(t, "/api/v1/commits/"+itoa(e.ids["c1"]), &d)
+	if d.Review.TokensIn == nil || *d.Review.TokensIn != 1000 || d.Review.Cost == nil || *d.Review.Cost != 0.25 {
+		t.Errorf("c1 review usage = %+v", d.Review)
+	}
+	e.get(t, "/api/v1/commits/"+itoa(e.ids["c2"]), &d)
+	if d.Review.TokensIn != nil || d.Review.Cost != nil {
+		t.Errorf("unmeasured review must be null: %+v", d.Review)
+	}
+}

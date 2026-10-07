@@ -206,6 +206,20 @@ components:
         commits_by_status: { type: object, additionalProperties: { type: integer } }
         reviewed: { type: integer, description: Commits that have a review }
         avg_score: { type: number, nullable: true }
+        usage:
+          type: object
+          description: |
+            Review runs created in the window, re-reviews included (cost is per run).
+            `measured_runs` counts runs that reported usage; mock runs report none and add nothing to the sums.
+            Tokens are everything sent to / returned by the model (cached input included);
+            cost is the provider-reported figure, in USD.
+          properties:
+            runs: { type: integer }
+            measured_runs: { type: integer }
+            tokens_in: { type: integer, format: int64 }
+            tokens_out: { type: integer, format: int64 }
+            cost_usd: { type: number }
+            avg_cost_usd: { type: number, nullable: true, description: Mean over measured runs }
         findings_by_severity: { type: object, additionalProperties: { type: integer }, description: Findings of each commit's latest review }
         queue_waiting: { type: integer }
         queue_running: { type: integer }
@@ -222,6 +236,7 @@ components:
               commits: { type: integer }
               reviewed: { type: integer }
               avg_score: { type: number, nullable: true }
+              cost_usd: { type: number, description: Cost of review runs created that day }
     Repository:
       type: object
       properties:
@@ -307,6 +322,9 @@ components:
         score: { type: integer, nullable: true }
         summary: { type: string }
         duration_ms: { type: integer, nullable: true }
+        tokens_in: { type: integer, nullable: true, description: Null when the reviewer reported no usage }
+        tokens_out: { type: integer, nullable: true }
+        cost_usd: { type: number, nullable: true }
         created_at: { type: string, format: date-time }
         findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
     CommitDetail:

@@ -24,6 +24,8 @@ type Outcome struct {
 	Skipped    []Skipped
 	Dropped    int // findings discarded because they did not match the diff
 	Chunks     int
+	// Usage sums every chunk's model calls.
+	Usage Usage
 
 	// Whole-commit stats, counting files that were skipped too.
 	Files, Additions, Deletions int
@@ -86,6 +88,7 @@ func Run(ctx context.Context, rv Reviewer, in Input, lim Limits) (Outcome, error
 			return Outcome{}, fmt.Errorf("chunk %d/%d: %w", i+1, len(chunks), err)
 		}
 		res, dropped := Sanitize(res, ch)
+		out.Usage = out.Usage.Add(res.Usage)
 		out.Dropped += dropped
 		out.Findings = append(out.Findings, res.Findings...)
 		if res.Summary != "" {

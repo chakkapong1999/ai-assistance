@@ -91,6 +91,23 @@ type Result struct {
 	Summary  string
 	Findings []Finding
 	Model    string
+	Usage    Usage
+}
+
+// Usage is what one or more model calls consumed. Known is false when the
+// reviewer reports nothing (the mock), so "unknown" is never stored as zero.
+type Usage struct {
+	// InputTokens counts everything sent to the model, cached or not.
+	InputTokens  int
+	OutputTokens int
+	// CostUSD is the figure the provider reports, not a price list lookup.
+	CostUSD float64
+	Known   bool
+}
+
+// Add returns the sum; the result is Known if either side is.
+func (u Usage) Add(o Usage) Usage {
+	return Usage{u.InputTokens + o.InputTokens, u.OutputTokens + o.OutputTokens, u.CostUSD + o.CostUSD, u.Known || o.Known}
 }
 
 // Request is one chunk of one commit.
