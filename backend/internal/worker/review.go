@@ -181,9 +181,10 @@ func (w *reviewCommitWorker) save(ctx context.Context, id int64, out review.Outc
 
 	var reviewID int64
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO reviews (commit_id, model, prompt_version, score, summary, duration_ms)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		INSERT INTO reviews (commit_id, model, prompt_version, score, summary, duration_ms, tokens_in, tokens_out, cost_usd)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
 		id, out.Model, review.PromptVersion, out.Score, out.Summary, took.Milliseconds(),
+		usageVal(out.Usage, out.Usage.InputTokens), usageVal(out.Usage, out.Usage.OutputTokens), usageVal(out.Usage, out.Usage.CostUSD),
 	).Scan(&reviewID); err != nil {
 		return err
 	}
@@ -211,4 +212,13 @@ func (w *reviewCommitWorker) save(ctx context.Context, id int64, out review.Outc
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// usageVal is v when the reviewer reported usage and NULL otherwise, so the
+// dashboard can tell "free" from "not measured".
+func usageVal[T int | float64](u review.Usage, v T) any {
+	if !u.Known {
+		return nil
+	}
+	return v
 }

@@ -626,3 +626,56 @@ func TestParseDiffSurvivesWrongHunkCounts(t *testing.T) {
 		t.Fatalf("recovery failed: %+v", files)
 	}
 }
+
+func TestClaudeCLIReportsUsage(t *testing.T) {
+	ctx := context.Background()
+	// Cached input counts as input: it was still sent to the model.
+	bin := fakeClaude(t, `cat >/dev/null; cat <<'EOF'
+{"type":"result","is_error":false,"result":"{\"summary\":\"ok\",\"findings\":[]}","total_cost_usd":0.0421,"usage":{"input_tokens":10,"cache_creation_input_tokens":200,"cache_read_input_tokens":3000,"output_tokens":55}}
+EOF
+`)
+	res, err := NewClaudeCLI(CLIOptions{Bin: bin}).Review(ctx, cliRequest(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u := res.Usage; !u.Known || u.InputTokens != 3210 || u.OutputTokens != 55 || u.CostUSD != 0.0421 {
+		t.Fatalf("usage = %+v", u)
+	}
+	// An envelope without usage is "not measured", never zero.
+	bin = fakeClaude(t, `cat >/dev/null; echo '{"is_error":false,"result":"{\"summary\":\"ok\",\"findings\":[]}"}'`)
+	res, err = NewClaudeCLI(CLIOptions{Bin: bin}).Review(ctx, cliRequest(t))
+	if err != nil || res.Usage.Known {
+		t.Fatalf("usage = %+v, err = %v; want not known", res.Usage, err)
+	}
+}
+
+type usageReviewer struct{ Mock }
+
+func (u usageReviewer) Review(ctx context.Context, r Request) (Result, error) {
+	res, err := u.Mock.Review(ctx, r)
+	res.Usage = Usage{InputTokens: 100, OutputTokens: 10, CostUSD: 0.5, Known: true}
+	return res, err
+}
+
+func TestRunSumsUsageAcrossChunks(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("diff --git a/big.go b/big.go\n--- a/big.go\n+++ b/big.go\n")
+	for i := 0; i < 6; i++ {
+		start := i*100 + 1
+		b.WriteString("@@ -" + strconv.Itoa(start) + ",1 +" + strconv.Itoa(start) + ",1 @@\n+" + strings.Repeat("q", 400) + "\n")
+	}
+	rv := usageReviewer{Mock{Scenario: config.ScenarioFindings}}
+	out, err := Run(context.Background(), rv, Input{Diff: b.String()}, Limits{MaxChunkBytes: 1000})
+	if err != nil || out.Chunks < 2 {
+		t.Fatalf("chunks=%d err=%v", out.Chunks, err)
+	}
+	n := out.Chunks
+	if u := out.Usage; !u.Known || u.InputTokens != 100*n || u.OutputTokens != 10*n || u.CostUSD != 0.5*float64(n) {
+		t.Fatalf("usage over %d chunks = %+v", n, u)
+	}
+	// The mock reports nothing, and that stays "unknown".
+	out, _ = Run(context.Background(), Mock{Scenario: config.ScenarioFindings}, Input{Diff: b.String()}, Limits{MaxChunkBytes: 1000})
+	if out.Usage.Known {
+		t.Fatalf("mock usage must be unknown: %+v", out.Usage)
+	}
+}

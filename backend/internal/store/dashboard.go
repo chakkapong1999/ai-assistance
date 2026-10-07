@@ -78,9 +78,23 @@ type DayPoint struct {
 	Commits  int      `json:"commits"`
 	Reviewed int      `json:"reviewed"`
 	AvgScore *float64 `json:"avg_score"`
+	CostUSD  float64  `json:"cost_usd"`
+}
+
+// Usage totals every review *run* in the window, re-reviews included (money
+// is spent per run, not per commit). Reviews that reported nothing (mock)
+// count in Runs but add nothing to the sums.
+type Usage struct {
+	Runs       int      `json:"runs"`
+	Measured   int      `json:"measured_runs"`
+	TokensIn   int64    `json:"tokens_in"`
+	TokensOut  int64    `json:"tokens_out"`
+	CostUSD    float64  `json:"cost_usd"`
+	AvgCostUSD *float64 `json:"avg_cost_usd"`
 }
 
 type Overview struct {
+	Usage         Usage          `json:"usage"`
 	Days          int            `json:"days"`
 	Since         time.Time      `json:"since"`
 	Commits       int            `json:"commits"`
@@ -171,6 +185,36 @@ func (d *Dashboard) Overview(ctx context.Context, days int) (Overview, error) {
 		return o, fmt.Errorf("repo counts: %w", err)
 	}
 
+	if err := d.pool.QueryRow(ctx, `
+		SELECT count(*), count(cost_usd),
+		       COALESCE(sum(tokens_in), 0)::bigint, COALESCE(sum(tokens_out), 0)::bigint,
+		       COALESCE(sum(cost_usd), 0)::float8, round(avg(cost_usd)::numeric, 4)::float8
+		FROM reviews WHERE created_at >= $1`, since).
+		Scan(&o.Usage.Runs, &o.Usage.Measured, &o.Usage.TokensIn, &o.Usage.TokensOut, &o.Usage.CostUSD, &o.Usage.AvgCostUSD); err != nil {
+		return o, fmt.Errorf("usage: %w", err)
+	}
+
+	costByDay := map[string]float64{}
+	crows, err := d.pool.Query(ctx, `
+		SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'), COALESCE(sum(cost_usd), 0)::float8
+		FROM reviews WHERE created_at >= $1 GROUP BY 1`, since)
+	if err != nil {
+		return o, fmt.Errorf("daily cost: %w", err)
+	}
+	for crows.Next() {
+		var day string
+		var c float64
+		if err := crows.Scan(&day, &c); err != nil {
+			crows.Close()
+			return o, err
+		}
+		costByDay[day] = c
+	}
+	crows.Close()
+	if err := crows.Err(); err != nil {
+		return o, err
+	}
+
 	rows, err = d.pool.Query(ctx, `
 		SELECT to_char(g.d, 'YYYY-MM-DD'), count(c.id), count(lr.id), round(avg(lr.score)::numeric, 1)::float8
 		FROM generate_series($1::date, $2::date, interval '1 day') AS g(d)
@@ -189,6 +233,7 @@ func (d *Dashboard) Overview(ctx context.Context, days int) (Overview, error) {
 		if err := rows.Scan(&p.Day, &p.Commits, &p.Reviewed, &p.AvgScore); err != nil {
 			return o, err
 		}
+		p.CostUSD = costByDay[p.Day]
 		o.Series = append(o.Series, p)
 	}
 	return o, rows.Err()
@@ -467,6 +512,9 @@ type Review struct {
 	Score         *int      `json:"score"`
 	Summary       string    `json:"summary"`
 	DurationMs    *int      `json:"duration_ms"`
+	TokensIn      *int      `json:"tokens_in"`
+	TokensOut     *int      `json:"tokens_out"`
+	CostUSD       *float64  `json:"cost_usd"`
 	CreatedAt     time.Time `json:"created_at"`
 	Findings      []Finding `json:"findings"`
 }
@@ -495,9 +543,9 @@ func (d *Dashboard) Commit(ctx context.Context, id int64) (CommitDetail, error) 
 
 	rv := &Review{Findings: []Finding{}}
 	err = d.pool.QueryRow(ctx, `
-		SELECT id, model, prompt_version, score, summary, duration_ms, created_at
+		SELECT id, model, prompt_version, score, summary, duration_ms, tokens_in, tokens_out, cost_usd::float8, created_at
 		FROM reviews WHERE commit_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`, id).
-		Scan(&rv.ID, &rv.Model, &rv.PromptVersion, &rv.Score, &rv.Summary, &rv.DurationMs, &rv.CreatedAt)
+		Scan(&rv.ID, &rv.Model, &rv.PromptVersion, &rv.Score, &rv.Summary, &rv.DurationMs, &rv.TokensIn, &rv.TokensOut, &rv.CostUSD, &rv.CreatedAt)
 	if err != nil {
 		return cd, fmt.Errorf("review: %w", err)
 	}

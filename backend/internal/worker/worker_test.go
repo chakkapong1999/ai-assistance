@@ -553,3 +553,33 @@ func TestReviewsRunOneAtATime(t *testing.T) {
 		t.Fatalf("peak concurrency = %d (want 1), reviewer calls = %d (want 4)", peak.Load(), calls.Load())
 	}
 }
+
+type usageRV struct{ review.Mock }
+
+func (u usageRV) Review(ctx context.Context, r review.Request) (review.Result, error) {
+	res, err := u.Mock.Review(ctx, r)
+	res.Usage = review.Usage{InputTokens: 1234, OutputTokens: 56, CostUSD: 0.0789, Known: true}
+	return res, err
+}
+
+func TestReviewStoresUsage(t *testing.T) {
+	reset(t)
+	enableRepoFromFixture(t)
+	ev := startClient(t, usageRV{review.Mock{Scenario: config.ScenarioFindings}}, &fakeBB{diff: diffText})
+	deliver(t, ev, "usage", fixture(t))
+	waitFor(t, "reviewed", func() bool { return count(t, `SELECT count(*) FROM reviews`) == 1 })
+	if n := count(t, `SELECT count(*) FROM reviews WHERE tokens_in = 1234 AND tokens_out = 56 AND cost_usd = 0.0789`); n != 1 {
+		t.Fatalf("usage not stored: %d", n)
+	}
+}
+
+func TestMockReviewLeavesUsageNull(t *testing.T) {
+	reset(t)
+	enableRepoFromFixture(t)
+	ev := startClient(t, review.Mock{Scenario: config.ScenarioFindings}, &fakeBB{diff: diffText})
+	deliver(t, ev, "nousage", fixture(t))
+	waitFor(t, "reviewed", func() bool { return count(t, `SELECT count(*) FROM reviews`) == 1 })
+	if n := count(t, `SELECT count(*) FROM reviews WHERE tokens_in IS NULL AND tokens_out IS NULL AND cost_usd IS NULL`); n != 1 {
+		t.Fatalf("mock usage must be NULL, not zero: %d", n)
+	}
+}

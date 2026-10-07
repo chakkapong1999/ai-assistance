@@ -63,6 +63,28 @@ type cliEnvelope struct {
 	IsError bool   `json:"is_error"`
 	Subtype string `json:"subtype"`
 	Result  string `json:"result"`
+	// TotalCostUSD is the CLI's own estimate for the call.
+	TotalCostUSD *float64 `json:"total_cost_usd"`
+	Usage        *struct {
+		InputTokens         int `json:"input_tokens"`
+		CacheCreationTokens int `json:"cache_creation_input_tokens"`
+		CacheReadTokens     int `json:"cache_read_input_tokens"`
+		OutputTokens        int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
+func (e cliEnvelope) usage() Usage {
+	var u Usage
+	if e.Usage != nil {
+		u.InputTokens = e.Usage.InputTokens + e.Usage.CacheCreationTokens + e.Usage.CacheReadTokens
+		u.OutputTokens = e.Usage.OutputTokens
+		u.Known = true
+	}
+	if e.TotalCostUSD != nil {
+		u.CostUSD = *e.TotalCostUSD
+		u.Known = true
+	}
+	return u
 }
 
 func (c *ClaudeCLI) Review(ctx context.Context, req Request) (Result, error) {
@@ -115,6 +137,7 @@ func (c *ClaudeCLI) Review(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 	res.Model = ModelClaudeCLI
+	res.Usage = env.usage()
 	return res, nil
 }
 
