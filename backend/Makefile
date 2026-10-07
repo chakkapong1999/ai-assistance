@@ -2,6 +2,10 @@
 DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/ai_review?sslmode=disable
 MIGRATE      ?= docker run --rm --network host -v "$(CURDIR)/migrations:/migrations" migrate/migrate:v4.18.1 -path=/migrations -database "$(DATABASE_URL)"
 
+# Loads backend/.env (if present) into the environment for run-* targets.
+# Real environment variables still win over the file.
+LOADENV = set -a; [ -f .env ] && . ./.env; set +a;
+
 .PHONY: up down migrate migrate-river migrate-down run-api run-worker test vet fmt build
 
 up:
@@ -20,10 +24,10 @@ migrate-down:
 	$(MIGRATE) down 1
 
 run-api:
-	DATABASE_URL="$(DATABASE_URL)" go run ./cmd/server --mode=api
+	@$(LOADENV) DATABASE_URL="$${DATABASE_URL:-$(DATABASE_URL)}" go run ./cmd/server --mode=api
 
 run-worker:
-	DATABASE_URL="$(DATABASE_URL)" go run ./cmd/server --mode=worker
+	@$(LOADENV) DATABASE_URL="$${DATABASE_URL:-$(DATABASE_URL)}" go run ./cmd/server --mode=worker
 
 test:
 	go test ./...
