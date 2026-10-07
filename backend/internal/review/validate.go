@@ -177,6 +177,7 @@ func Sanitize(res Result, chunk Chunk) (Result, int) {
 				f.Suggestion = nil
 			}
 		}
+		f.CodeContext = CodeContext(chunk, f.FilePath, f.LineStart, f.LineEnd)
 		kept = append(kept, f)
 	}
 	res.Findings = kept

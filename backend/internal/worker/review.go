@@ -212,9 +212,9 @@ func insertReviewTx(ctx context.Context, tx pgx.Tx, sub subject, out review.Outc
 	for _, f := range out.Findings {
 		var fid int64
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO review_findings (review_id, file_path, line_start, line_end, severity, category, title, explanation)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-			reviewID, f.FilePath, f.LineStart, f.LineEnd, f.Severity, f.Category, f.Title, f.Explanation,
+			INSERT INTO review_findings (review_id, file_path, line_start, line_end, severity, category, title, explanation, code_context)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, '')) RETURNING id`,
+			reviewID, f.FilePath, f.LineStart, f.LineEnd, f.Severity, f.Category, f.Title, f.Explanation, f.CodeContext,
 		).Scan(&fid); err != nil {
 			return err
 		}

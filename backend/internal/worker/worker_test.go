@@ -217,6 +217,9 @@ func TestWebhookToReviewEndToEnd(t *testing.T) {
 	if n := count(t, `SELECT count(*) FROM review_findings`); n != 2 {
 		t.Fatalf("findings = %d, want 2", n)
 	}
+	if n := count(t, `SELECT count(*) FROM review_findings WHERE code_context LIKE '@@ %'`); n != 2 {
+		t.Fatalf("findings with code_context = %d, want 2", n)
+	}
 	if got := str(t, `SELECT severity FROM review_findings ORDER BY id LIMIT 1`); got != "major" {
 		t.Fatalf("first finding severity = %s (findings must be stored most severe first)", got)
 	}

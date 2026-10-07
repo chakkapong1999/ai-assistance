@@ -242,4 +242,16 @@ func TestCheckSchemaNoticesMissingPullRequestColumns(t *testing.T) {
 	}
 }
 
+func TestCheckSchemaNoticesMissingCodeContext(t *testing.T) {
+	ctx := context.Background()
+	if _, err := testPool.Exec(ctx, `ALTER TABLE review_findings RENAME COLUMN code_context TO code_context_off`); err != nil {
+		t.Fatal(err)
+	}
+	defer testPool.Exec(ctx, `ALTER TABLE review_findings RENAME COLUMN code_context_off TO code_context`)
+	err := store.CheckSchema(ctx, testPool)
+	if err == nil || !strings.Contains(err.Error(), "migration 0004") {
+		t.Fatalf("err = %v, want a hint about migration 0004", err)
+	}
+}
+
 var _ pgx.Tx // keep the import used if helpers change

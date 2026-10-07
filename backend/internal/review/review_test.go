@@ -287,6 +287,11 @@ func TestSanitize(t *testing.T) {
 	if out.Findings[2].Suggestion != nil {
 		t.Fatal("hallucinated suggestion should be removed")
 	}
+	for i, f := range out.Findings {
+		if !strings.HasPrefix(f.CodeContext, "@@ -") || !strings.Contains(f.CodeContext, "\n") {
+			t.Fatalf("finding %d has no code context: %q", i, f.CodeContext)
+		}
+	}
 }
 
 func TestUnifiedDiff(t *testing.T) {

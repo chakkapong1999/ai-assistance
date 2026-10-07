@@ -495,14 +495,17 @@ type Suggestion struct {
 }
 
 type Finding struct {
-	ID          int64       `json:"id"`
-	FilePath    string      `json:"file_path"`
-	LineStart   int         `json:"line_start"`
-	LineEnd     int         `json:"line_end"`
-	Severity    string      `json:"severity"`
-	Category    string      `json:"category"`
-	Title       string      `json:"title"`
-	Explanation string      `json:"explanation"`
+	ID          int64  `json:"id"`
+	FilePath    string `json:"file_path"`
+	LineStart   int    `json:"line_start"`
+	LineEnd     int    `json:"line_end"`
+	Severity    string `json:"severity"`
+	Category    string `json:"category"`
+	Title       string `json:"title"`
+	Explanation string `json:"explanation"`
+	// CodeContext is the diff hunk the finding is about; null for reviews made
+	// before it was recorded.
+	CodeContext *string     `json:"code_context"`
 	Suggestion  *Suggestion `json:"suggestion"`
 }
 
@@ -564,7 +567,7 @@ func (d *Dashboard) latestReviewOf(ctx context.Context, col string, id int64) (*
 	}
 
 	rows, err := d.pool.Query(ctx, `
-		SELECT f.id, f.file_path, f.line_start, f.line_end, f.severity, f.category, f.title, f.explanation,
+		SELECT f.id, f.file_path, f.line_start, f.line_end, f.severity, f.category, f.title, f.explanation, f.code_context,
 		       s.id, s.original_snippet, s.suggested_snippet, s.unified_diff, s.status
 		FROM review_findings f
 		LEFT JOIN code_suggestions s ON s.finding_id = f.id
@@ -579,7 +582,7 @@ func (d *Dashboard) latestReviewOf(ctx context.Context, col string, id int64) (*
 		var f Finding
 		var sid *int64
 		var orig, sugg, diff, status *string
-		if err := rows.Scan(&f.ID, &f.FilePath, &f.LineStart, &f.LineEnd, &f.Severity, &f.Category, &f.Title, &f.Explanation,
+		if err := rows.Scan(&f.ID, &f.FilePath, &f.LineStart, &f.LineEnd, &f.Severity, &f.Category, &f.Title, &f.Explanation, &f.CodeContext,
 			&sid, &orig, &sugg, &diff, &status); err != nil {
 			return nil, err
 		}
