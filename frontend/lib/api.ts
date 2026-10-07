@@ -1,7 +1,12 @@
+import { cookies } from "next/headers";
+
 // The dashboard talks to the Go API only; it never connects to Postgres.
-// Both variables are read on the server (see docker-compose.yml); the token
-// never reaches the browser. The token identifies this dashboard *server*,
-// not the person looking at it.
+// API_BASE_URL and API_TOKEN are read on the server (see docker-compose.yml)
+// and never reach the browser. API_TOKEN is the shared, read-only token. A
+// person who signs in with their own token (see /signin) is remembered in an
+// httpOnly cookie, and that token is used instead, so the API knows who acts.
+// Real login (OAuth) can replace the cookie later without touching the rest.
+export const TOKEN_COOKIE = "aicr_token";
 
 export class ApiError extends Error {
   constructor(
@@ -13,9 +18,9 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function call<T>(path: string, init: RequestInit = {}, tokenOverride?: string): Promise<T> {
   const base = process.env.API_BASE_URL ?? "http://localhost:8080";
-  const token = process.env.API_TOKEN;
+  const token = tokenOverride ?? (await cookies()).get(TOKEN_COOKIE)?.value ?? process.env.API_TOKEN;
   if (!token) {
     throw new ApiError(0, "config", "API_TOKEN is not set for the dashboard (see README, REST API).");
   }
@@ -127,7 +132,17 @@ export type Finding = {
   /** The diff hunk the finding is about; null for reviews made before it was recorded. */
   code_context: string | null;
   suggestion: { id: number; original_snippet: string; suggested_snippet: string; unified_diff: string; status: string } | null;
+  /** open -> fixed (the author says so) -> back to open, or dismissed by a reviewer. */
+  status: FindingStatus;
+  status_by: { id: number; name: string } | null;
+  status_note: string | null;
+  status_at: string | null;
+  history: { action: "fixed" | "reopened" | "dismissed"; by: { id: number; name: string } | null; note: string | null; at: string }[];
 };
+
+export type FindingStatus = "open" | "fixed" | "dismissed";
+export type Role = "viewer" | "author" | "senior" | "lead" | "admin";
+export type Me = { role: Role; user: { id: number; name: string } | null };
 
 export type CommitDetail = CommitSummary & {
   message: string;
@@ -143,6 +158,8 @@ export type CommitDetail = CommitSummary & {
     tokens_out: number | null;
     cost_usd: number | null;
     created_at: string;
+    /** Set once a senior, lead or admin closed the review. */
+    closed: { at: string; by: { id: number; name: string } | null; note: string | null } | null;
     findings: Finding[];
   } | null;
 };
@@ -196,7 +213,12 @@ export type UserDetail = User & { days: number; trend: { week: string; commits: 
 type Page<T> = { items: T[]; total: number; limit: number; offset: number };
 
 export const api = {
-  me: () => call<{ role: "viewer" | "admin" }>("/me"),
+  me: () => call<Me>("/me"),
+  meWith: (token: string) => call<Me>("/me", {}, token),
+  findingFixed: (id: number, note: string) => call<{ status: string }>(`/findings/${id}/fixed`, { method: "POST", body: JSON.stringify({ note }) }),
+  findingReopen: (id: number, note: string) => call<{ status: string }>(`/findings/${id}/reopen`, { method: "POST", body: JSON.stringify({ note }) }),
+  findingDismiss: (id: number, note: string) => call<{ status: string }>(`/findings/${id}/dismiss`, { method: "POST", body: JSON.stringify({ note }) }),
+  closeReview: (id: number, note: string) => call<{ status: string }>(`/reviews/${id}/close`, { method: "POST", body: JSON.stringify({ note }) }),
   overview: (days: number) => call<Overview>(`/overview${qs({ days })}`),
   repositories: (p: Record<string, string | number | undefined> = {}) => call<Page<Repository>>(`/repositories${qs(p)}`),
   setReviewEnabled: (id: number, enabled: boolean) =>

@@ -76,7 +76,7 @@ export default async function PullRequestPage({ params, searchParams }: { params
             : p.review_skip_reason ?? (admin && p.state === "OPEN" ? "Use Review again to queue one." : "Only open pull requests can be reviewed.")}
         </div>
       ) : (
-        <ReviewPanel review={r} reviewsCount={p.reviews_count} layout={layout} hrefFor={hrefFor} />
+        <ReviewPanel review={r} reviewsCount={p.reviews_count} layout={layout} hrefFor={hrefFor} me={me} authorId={p.author.id} back={`/pull-requests/${id}${layout === "split" ? "?view=split" : ""}`} />
       )}
     </>
   );

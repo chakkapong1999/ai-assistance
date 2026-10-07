@@ -70,7 +70,7 @@ export default async function CommitPage({ params, searchParams }: { params: Pro
             : c.review_skip_reason ?? (admin ? "Use Review again to queue one." : "Ask an admin to queue one.")}
         </div>
       ) : (
-        <ReviewPanel review={r} reviewsCount={c.reviews_count} layout={layout} hrefFor={hrefFor} />
+        <ReviewPanel review={r} reviewsCount={c.reviews_count} layout={layout} hrefFor={hrefFor} me={me} authorId={c.author.id} back={`/commits/${id}${layout === "split" ? "?view=split" : ""}`} />
       )}
     </>
   );
