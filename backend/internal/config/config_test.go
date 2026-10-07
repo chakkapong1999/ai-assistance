@@ -114,3 +114,25 @@ func TestClaudeCLIRequiresBinaryInWorkerOnly(t *testing.T) {
 		t.Fatalf("worker with existing binary: %v", err)
 	}
 }
+
+func TestBitbucketBaseURLOverride(t *testing.T) {
+	env := func(extra map[string]string) func(string) string {
+		base := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t", "REVIEWER_MODE": "mock"}
+		for k, v := range extra {
+			base[k] = v
+		}
+		return func(k string) string { return base[k] }
+	}
+	cfg, err := Load("worker", env(map[string]string{"BITBUCKET_BASE_URL": " http://localhost:7990 "}))
+	if err != nil || cfg.BitbucketBaseURL != "http://localhost:7990" {
+		t.Fatalf("cfg=%q err=%v", cfg.BitbucketBaseURL, err)
+	}
+	if cfg, err := Load("worker", env(nil)); err != nil || cfg.BitbucketBaseURL != "" {
+		t.Fatalf("default should be empty (use Bitbucket Cloud): %q %v", cfg.BitbucketBaseURL, err)
+	}
+	for _, bad := range []string{"localhost:7990", "ftp://x", "http://"} {
+		if _, err := Load("worker", env(map[string]string{"BITBUCKET_BASE_URL": bad})); err == nil {
+			t.Errorf("%q should be rejected", bad)
+		}
+	}
+}

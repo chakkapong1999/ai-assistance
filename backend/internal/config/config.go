@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strings"
 	"time"
@@ -41,6 +42,9 @@ type Config struct {
 
 	BitbucketWebhookSecret string
 	BitbucketToken         string
+	// BitbucketBaseURL overrides the Bitbucket API root (default api.bitbucket.org/2.0).
+	// For local testing against cmd/mockbitbucket; the token is sent to this URL.
+	BitbucketBaseURL string
 
 	ReviewerMode       string
 	MockReviewScenario string
@@ -64,6 +68,7 @@ func Load(mode string, getenv func(string) string) (Config, error) {
 		DatabaseURL:            get("DATABASE_URL", ""),
 		BitbucketWebhookSecret: get("BITBUCKET_WEBHOOK_SECRET", ""),
 		BitbucketToken:         get("BITBUCKET_TOKEN", ""),
+		BitbucketBaseURL:       strings.TrimSpace(get("BITBUCKET_BASE_URL", "")),
 		ReviewerMode:           get("REVIEWER_MODE", ReviewerMock),
 		MockReviewScenario:     get("MOCK_REVIEW_SCENARIO", ScenarioFindings),
 		ClaudeBin:              get("CLAUDE_BIN", "claude"),
@@ -103,6 +108,12 @@ func (c Config) validate() []error {
 		need("BITBUCKET_TOKEN", c.BitbucketToken)
 	default:
 		errs = append(errs, fmt.Errorf("unknown mode %q (want api, worker or backfill)", c.Mode))
+	}
+
+	if c.BitbucketBaseURL != "" {
+		if u, err := url.Parse(c.BitbucketBaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			errs = append(errs, fmt.Errorf("BITBUCKET_BASE_URL %q must be an http(s) URL", c.BitbucketBaseURL))
+		}
 	}
 
 	switch c.ReviewerMode {
