@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -57,6 +58,11 @@ type Config struct {
 	PollInterval time.Duration
 	// PollLookback bounds how far back the first poll of a branch reads.
 	PollLookback time.Duration
+
+	// ReviewNewRepos: a repository first seen by the worker starts with review
+	// on (default) or off. It only decides the starting value; an admin's later
+	// choice in the dashboard is never overwritten.
+	ReviewNewRepos bool
 
 	ReviewerMode       string
 	MockReviewScenario string
@@ -159,6 +165,15 @@ func Load(mode string, getenv func(string) string) (Config, error) {
 	}
 
 	var errs []error
+	c.ReviewNewRepos = true
+	if v := get("REVIEW_NEW_REPOS", ""); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("REVIEW_NEW_REPOS: %q is not true or false", v))
+		} else {
+			c.ReviewNewRepos = b
+		}
+	}
 	if d := get("MOCK_REVIEW_DELAY", "0s"); d != "" {
 		parsed, err := time.ParseDuration(d)
 		switch {

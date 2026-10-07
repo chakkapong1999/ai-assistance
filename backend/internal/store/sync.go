@@ -46,9 +46,20 @@ type PushResult struct {
 }
 
 // Syncer writes Bitbucket data into Postgres.
-type Syncer struct{ pool *pgxpool.Pool }
+type Syncer struct {
+	pool           *pgxpool.Pool
+	reviewNewRepos bool
+}
 
 func NewSyncer(pool *pgxpool.Pool) *Syncer { return &Syncer{pool: pool} }
+
+// ReviewNewRepos sets whether a repository created by a sync starts with
+// review on. It is only the starting value; syncing an existing repository
+// never changes it. Off unless asked for.
+func (s *Syncer) ReviewNewRepos(on bool) *Syncer {
+	s.reviewNewRepos = on
+	return s
+}
 
 // SyncPush creates whatever is missing (workspace, project, repository, users)
 // and records the pushed commits, all in one transaction. It is idempotent:
@@ -108,17 +119,17 @@ func (s *Syncer) SyncPushTx(ctx context.Context, tx pgx.Tx, in PushInput) (PushR
 		return PushResult{}, fmt.Errorf("upsert project: %w", err)
 	}
 
-	// review_enabled is deliberately absent from the UPDATE: an admin's choice
-	// must survive every later push.
+	// review_enabled is set on insert only and is deliberately absent from the
+	// UPDATE: an admin's choice must survive every later push.
 	res := PushResult{}
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO repositories (project_id, bb_uuid, slug, name, default_branch)
-		VALUES ($1, $2, $3, $4, NULLIF($5, ''))
+		INSERT INTO repositories (project_id, bb_uuid, slug, name, default_branch, review_enabled)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
 		ON CONFLICT (bb_uuid) DO UPDATE SET
 			project_id = EXCLUDED.project_id, slug = EXCLUDED.slug, name = EXCLUDED.name,
 			default_branch = COALESCE(EXCLUDED.default_branch, repositories.default_branch)
 		RETURNING id, review_enabled`,
-		projID, repo.UUID, repo.Slug(), firstNonEmpty(repo.Name, repo.Slug()), repo.DefaultBranch(),
+		projID, repo.UUID, repo.Slug(), firstNonEmpty(repo.Name, repo.Slug()), repo.DefaultBranch(), s.reviewNewRepos,
 	).Scan(&res.RepoID, &res.ReviewEnabled); err != nil {
 		return PushResult{}, fmt.Errorf("upsert repository: %w", err)
 	}

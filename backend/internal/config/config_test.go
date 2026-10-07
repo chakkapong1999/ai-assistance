@@ -208,3 +208,23 @@ func TestPollConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestReviewNewReposDefaultsToOnAndCanBeSwitchedOff(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t"}
+	with := func(v string) map[string]string {
+		m := map[string]string{"REVIEW_NEW_REPOS": v}
+		for k, x := range base {
+			m[k] = x
+		}
+		return m
+	}
+	for in, want := range map[string]bool{"": true, "true": true, "1": true, "false": false, "0": false, "FALSE": false} {
+		c, err := Load(ModeWorker, env(with(in)))
+		if err != nil || c.ReviewNewRepos != want {
+			t.Errorf("REVIEW_NEW_REPOS=%q -> %v, %v; want %v", in, c.ReviewNewRepos, err, want)
+		}
+	}
+	if _, err := Load(ModeWorker, env(with("maybe"))); err == nil || !strings.Contains(err.Error(), "REVIEW_NEW_REPOS") {
+		t.Errorf("an invalid value must be an error naming the variable, got %v", err)
+	}
+}

@@ -280,3 +280,31 @@ func TestConcurrentRawOnlyAuthorGetsOneUser(t *testing.T) {
 		t.Fatalf("commits attributed = %d, want %d", c, n)
 	}
 }
+
+func TestNewRepositoryStartsWithReviewAsConfigured(t *testing.T) {
+	ctx := context.Background()
+	s := resetSync(t)
+
+	// Default: off, as before.
+	res, err := s.SyncPush(ctx, in("a", commit("c1", "M <m@x.com>", max, 1)))
+	if err != nil || res.ReviewEnabled {
+		t.Fatalf("default: enabled=%v err=%v; a new repository must start with review off unless asked", res.ReviewEnabled, err)
+	}
+
+	// On: a repository created from now on starts enabled.
+	resetSync(t)
+	on := store.NewSyncer(testPool).ReviewNewRepos(true)
+	res, err = on.SyncPush(ctx, in("a", commit("c1", "M <m@x.com>", max, 1)))
+	if err != nil || !res.ReviewEnabled {
+		t.Fatalf("on: enabled=%v err=%v", res.ReviewEnabled, err)
+	}
+
+	// It is only a starting value: an admin who switched the repository off keeps it off.
+	if _, err := testPool.Exec(ctx, `UPDATE repositories SET review_enabled = false`); err != nil {
+		t.Fatal(err)
+	}
+	res, err = on.SyncPush(ctx, in("a", commit("c2", "M <m@x.com>", max, 1)))
+	if err != nil || res.ReviewEnabled {
+		t.Fatalf("a later sync turned review back on: enabled=%v err=%v", res.ReviewEnabled, err)
+	}
+}

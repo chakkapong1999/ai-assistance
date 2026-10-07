@@ -40,6 +40,10 @@ type Deps struct {
 	// Poll turns on polling Bitbucket for commits (nil = webhooks only).
 	Poll *PollConfig
 
+	// ReviewNewRepos makes repositories first seen by the worker start with
+	// review on. Off (the zero value) keeps the old behaviour.
+	ReviewNewRepos bool
+
 	WebhookWorkers int           // default 4
 	PollInterval   time.Duration // how often idle queues look for jobs; default River's (1s)
 }
@@ -67,12 +71,12 @@ func NewClient(d Deps) (*river.Client[pgx.Tx], error) {
 	}
 
 	workers := river.NewWorkers()
-	river.AddWorker(workers, &processWebhookWorker{d: d, syncer: store.NewSyncer(d.Pool)})
+	river.AddWorker(workers, &processWebhookWorker{d: d, syncer: store.NewSyncer(d.Pool).ReviewNewRepos(d.ReviewNewRepos)})
 	river.AddWorker(workers, &reviewCommitWorker{d: d})
 	river.AddWorker(workers, &reviewPullRequestWorker{d: d})
 	// Always registered, so a poll job left in the queue after polling was
 	// switched off is cancelled instead of failing as an unknown kind.
-	river.AddWorker(workers, &pollReposWorker{d: d, syncer: store.NewSyncer(d.Pool)})
+	river.AddWorker(workers, &pollReposWorker{d: d, syncer: store.NewSyncer(d.Pool).ReviewNewRepos(d.ReviewNewRepos)})
 
 	var periodic []*river.PeriodicJob
 	if d.Poll.enabled() {

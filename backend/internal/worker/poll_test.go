@@ -26,6 +26,10 @@ type poller struct {
 	bb   *bitbucket.Client
 }
 
+// pollReviewNewRepos is what the next startPoller gives the worker as
+// Deps.ReviewNewRepos; tests that need it on set it and restore it.
+var pollReviewNewRepos bool
+
 // startPoller runs a real worker client that polls the in-memory Bitbucket.
 // The timer is an hour, so rounds happen only at start and when poll() asks.
 func startPoller(t *testing.T, m *mockbitbucket.Mock, repos []string, wrap func(*bitbucket.Client) PollBitbucket) *poller {
@@ -47,7 +51,7 @@ func startPollerWith(t *testing.T, m *mockbitbucket.Mock, repos []string, wrap f
 		pb = wrap(bb)
 	}
 	rc, err := NewClient(Deps{
-		Pool: testPool, Log: quiet, Bitbucket: bb, Reviewer: rv,
+		Pool: testPool, Log: quiet, Bitbucket: bb, Reviewer: rv, ReviewNewRepos: pollReviewNewRepos,
 		PollInterval: 120 * time.Millisecond,
 		Poll:         &PollConfig{Repos: repos, Interval: time.Hour, Lookback: 7 * 24 * time.Hour, Bitbucket: pb},
 	})
@@ -318,5 +322,21 @@ func TestPollJobIsCancelledWhenPollingIsOff(t *testing.T) {
 	}
 	waitFor(t, "stale poll job cancelled", func() bool {
 		return count(t, `SELECT count(*) FROM river_job WHERE kind='poll_repos' AND state='cancelled'`) == 1
+	})
+}
+
+func TestPollReviewsANewRepositoryFromTheFirstRoundWhenConfigured(t *testing.T) {
+	pollReviewNewRepos = true
+	t.Cleanup(func() { pollReviewNewRepos = false })
+	m := mockbitbucket.New("")
+	h := m.AddCommit("acme", "api", "main", "first")
+	p := startPoller(t, m, []string{"acme/api"}, nil)
+	p.waitRounds(1)
+
+	if count(t, `SELECT count(*) FROM repositories WHERE review_enabled`) != 1 {
+		t.Fatal("the new repository did not start with review on")
+	}
+	waitFor(t, "first commit reviewed", func() bool {
+		return count(t, `SELECT count(*) FROM commits WHERE hash = $1 AND review_status = 'done'`, h) == 1
 	})
 }
