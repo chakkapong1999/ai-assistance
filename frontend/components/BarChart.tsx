@@ -28,8 +28,8 @@ export default function BarChart({ bars, title, height = 120 }: { bars: Bar[]; t
         return (
           <g key={b.label}>
             <title>{b.tip}</title>
-            <rect x={x} y={y(b.value)} width={bw} height={Math.max(0, height - padB - y(b.value))} fill="var(--bar-2)" rx={1.5} />
-            {b.value2 ? <rect x={x} y={y(b.value2)} width={bw} height={Math.max(0, height - padB - y(b.value2))} fill="var(--bar)" rx={1.5} /> : null}
+            <rect x={x} y={y(b.value)} width={bw} height={Math.max(0, height - padB - y(b.value))} style={{ fill: "color-mix(in srgb, var(--accent) 30%, var(--panel))" }} />
+            {b.value2 ? <rect x={x} y={y(b.value2)} width={bw} height={Math.max(0, height - padB - y(b.value2))} fill="var(--accent)" /> : null}
             {i % every === 0 ? (
               <text x={x + bw / 2} y={height - 4} textAnchor="middle">
                 {b.label}

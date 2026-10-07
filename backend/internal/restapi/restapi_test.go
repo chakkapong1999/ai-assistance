@@ -107,6 +107,7 @@ func setup(t *testing.T) *env {
 	finding(r1, "b.go", 9, "minor", "minor-b")
 	finding(r1, "z.go", 1, "critical", "crit-z")
 	fid := finding(r1, "a.go", 5, "major", "major-a")
+	exec(t, `UPDATE review_findings SET code_context = $2 WHERE id = $1`, fid, "@@ -5,1 +5,1 @@\n-x\n+y")
 	exec(t, `INSERT INTO code_suggestions (finding_id, original_snippet, suggested_snippet, unified_diff) VALUES ($1, 'x', 'y', '--- a/a.go')`, fid)
 	old := review("c2", 10, 120)
 	finding(old, "old.go", 1, "critical", "stale")
@@ -383,9 +384,10 @@ func TestCommitDetail(t *testing.T) {
 		Review       *struct {
 			Score    int `json:"score"`
 			Findings []struct {
-				Title      string `json:"title"`
-				Severity   string `json:"severity"`
-				Suggestion *struct {
+				Title       string  `json:"title"`
+				Severity    string  `json:"severity"`
+				CodeContext *string `json:"code_context"`
+				Suggestion  *struct {
 					UnifiedDiff string `json:"unified_diff"`
 				} `json:"suggestion"`
 			} `json:"findings"`
@@ -404,6 +406,9 @@ func TestCommitDetail(t *testing.T) {
 	}
 	if s := d.Review.Findings[1].Suggestion; s == nil || s.UnifiedDiff != "--- a/a.go" || d.Review.Findings[0].Suggestion != nil {
 		t.Errorf("suggestion not attached to the right finding: %+v", d.Review.Findings)
+	}
+	if c := d.Review.Findings[1].CodeContext; c == nil || *c != "@@ -5,1 +5,1 @@\n-x\n+y" || d.Review.Findings[0].CodeContext != nil {
+		t.Errorf("code_context not returned (null when unrecorded): %+v", d.Review.Findings)
 	}
 	// c2: newest review, none of the stale findings.
 	e.get(t, "/api/v1/commits/"+itoa(e.ids["c2"]), &d)

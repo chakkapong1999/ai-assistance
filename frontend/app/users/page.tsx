@@ -2,16 +2,17 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { intParam, num, one } from "@/lib/format";
-import { ScoreBadge } from "@/components/badges";
+import ScoreMeter from "@/components/ScoreMeter";
+import Segments from "@/components/Segments";
 import Window from "@/components/Window";
 
-export const dynamic = "force-dynamic";
+export const metadata = { title: "People" };
 
-const sorts = [
-  ["commits", "Commits"],
-  ["score", "Score"],
+const sorts: [string, string][] = [
+  ["commits", "Most commits"],
+  ["score", "Highest score"],
   ["name", "Name"],
-] as const;
+];
 
 export default async function Users({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
@@ -20,72 +21,55 @@ export default async function Users({ searchParams }: { searchParams: Promise<Re
   const sort = sorts.some(([k]) => k === one(sp.sort)) ? one(sp.sort) : "commits";
   const [list, problem] = await guard(api.users({ days, q, sort, limit: 200 }));
   if (!list) return problem;
-  const showEmail = list.items.some((u) => u.email);
+  const keep = { days: String(days), ...(q ? { q } : {}) };
 
   return (
     <>
-      <div className="row" style={{ justifyContent: "space-between" }}>
+      <div className="head">
         <div>
           <h1>People</h1>
-          <p className="sub">Commit authors, last {days} days. Score is the mean of each commit&apos;s latest review.</p>
+          <p>Commit authors over the last {days} days. The score is the mean of each commit&apos;s latest review.</p>
         </div>
         <Window base="/users" days={days} extra={{ sort, ...(q ? { q } : {}) }} />
       </div>
-      <form className="filters" action="/users">
+      <form className="toolbar" action="/users">
         <input type="hidden" name="days" value={days} />
+        <input type="hidden" name="sort" value={sort} />
         <label>
           Search
-          <input name="q" defaultValue={q} placeholder="name" />
+          <input type="search" name="q" defaultValue={q} placeholder="Name" />
         </label>
-        <label>
-          Sort by
-          <select name="sort" defaultValue={sort}>
-            {sorts.map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="primary">Apply</button>
+        <button className="primary">Search</button>
+        <Segments base="/users" param="sort" current={sort} keep={keep} label="Sort by" options={sorts} />
       </form>
       {list.items.length === 0 ? (
-        <div className="empty">No people yet. Authors are created from push webhooks.</div>
-      ) : (
-        <div className="tablewrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                {showEmail ? <th>Email</th> : null}
-                <th className="num">Commits</th>
-                <th className="num">Reviewed</th>
-                <th className="num">Avg score</th>
-                <th className="num">Findings</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.items.map((u) => (
-                <tr key={u.id}>
-                  <td>
-                    <Link href={`/users/${u.id}?days=${days}`}>{u.display_name}</Link>
-                    {!u.linked ? <span className="muted"> · not linked to Bitbucket</span> : null}
-                    {u.job_title ? <div className="muted">{u.job_title}</div> : null}
-                  </td>
-                  {showEmail ? <td>{u.email ?? ""}</td> : null}
-                  <td className="num">{num(u.commits)}</td>
-                  <td className="num">{num(u.reviewed)}</td>
-                  <td className="num">
-                    <ScoreBadge value={u.avg_score} />
-                  </td>
-                  <td className="num">{num(u.findings)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="empty">
+          <strong>No people found</strong>
+          Authors are created from pushes and from the poller.
         </div>
+      ) : (
+        <ul className="rows">
+          {list.items.map((u) => (
+            <li key={u.id} className="item cols-people">
+              <ScoreMeter value={u.avg_score} />
+              <div>
+                <Link href={`/users/${u.id}?days=${days}`} className="title">
+                  {u.display_name}
+                </Link>
+                <div className="meta">
+                  {[u.job_title, u.email, u.linked ? null : "Not linked to Bitbucket"].filter(Boolean).join(" · ") || "Bitbucket account"}
+                </div>
+              </div>
+              <div className="side r">{num(u.commits)} commits</div>
+              <div className="side r">{num(u.reviewed)} reviewed</div>
+              <div className="side r">{num(u.findings)} findings</div>
+            </li>
+          ))}
+        </ul>
       )}
-      <p className="muted">{list.total} people in total.</p>
+      <div className="pager">
+        <span>{list.total} people in total</span>
+      </div>
     </>
   );
 }

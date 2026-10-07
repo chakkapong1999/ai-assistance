@@ -1,28 +1,29 @@
 import type { ReactNode } from "react";
-import Nav from "@/components/Nav";
+import "@fontsource-variable/schibsted-grotesk";
+import "@fontsource-variable/jetbrains-mono";
+import Rail from "@/components/Rail";
+import { api } from "@/lib/api";
 import "./globals.css";
 
 export const metadata = {
-  title: "AI Code Review",
-  description: "AI review of every commit in the organization",
+  title: { default: "Code review", template: "%s · Code review" },
+  description: "AI review of every commit and pull request in the organization",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export const dynamic = "force-dynamic";
+
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const role = await api.me().then((m) => m.role).catch(() => null);
   return (
     <html lang="en">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body>
-        <header className="top">
-          <div className="wrap">
-            <span className="brand">AI Code Review</span>
-            <Nav />
-          </div>
-        </header>
-        <main className="wrap" style={{ paddingTop: 20 }}>
-          {children}
-        </main>
+        <div className="shell">
+          <Rail role={role} />
+          <main className="main">{children}</main>
+        </div>
       </body>
     </html>
   );

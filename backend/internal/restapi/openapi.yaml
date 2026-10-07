@@ -412,6 +412,10 @@ components:
         category: { type: string }
         title: { type: string }
         explanation: { type: string }
+        code_context:
+          type: string
+          nullable: true
+          description: The diff hunk the finding is about (unified-diff lines). Null for reviews made before this was recorded.
         suggestion: { allOf: [{ $ref: "#/components/schemas/Suggestion" }], nullable: true }
     Review:
       type: object

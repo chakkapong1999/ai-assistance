@@ -84,6 +84,8 @@ type Finding struct {
 	Title       string
 	Explanation string
 	Suggestion  *Suggestion
+	// CodeContext is the diff hunk the finding is about; filled by Sanitize.
+	CodeContext string
 }
 
 // Result is what a Reviewer returns for one chunk.

@@ -124,6 +124,8 @@ export type Finding = {
   category: string;
   title: string;
   explanation: string;
+  /** The diff hunk the finding is about; null for reviews made before it was recorded. */
+  code_context: string | null;
   suggestion: { id: number; original_snippet: string; suggested_snippet: string; unified_diff: string; status: string } | null;
 };
 

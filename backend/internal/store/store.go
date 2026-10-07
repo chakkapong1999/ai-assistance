@@ -59,5 +59,13 @@ func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	if !has {
 		return errors.New("store: pull_requests is out of date: run `make migrate` (migration 0003)")
 	}
+	if err := pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		               WHERE table_schema = current_schema() AND table_name = 'review_findings' AND column_name = 'code_context')`).Scan(&has); err != nil {
+		return fmt.Errorf("store: check review_findings: %w", err)
+	}
+	if !has {
+		return errors.New("store: review_findings is out of date: run `make migrate` (migration 0004)")
+	}
 	return nil
 }
