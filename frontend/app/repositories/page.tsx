@@ -19,14 +19,12 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
   return (
     <>
       <div className="head">
-        <div>
-          <h1>Repositories</h1>
-          <p>
+        <h1>Repositories</h1>
+      </div>
+      <p className="intro">
             {enabled} of {list.total} are reviewed. Turning review on sends that repository&apos;s code to the reviewer. Turning it off keeps past reviews, and commits pushed while it is off are
             skipped for good.
-          </p>
-        </div>
-      </div>
+      </p>
       {notice ? (
         <p className="banner" role="status">
           {notice}
@@ -48,6 +46,13 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
         </div>
       ) : (
         <ul className="rows">
+          <li className="item hd cols-repo" aria-hidden="true">
+            <span>Avg score</span>
+            <span>Repository</span>
+            <span className="r">Reviewed</span>
+            <span className="r">Last commit</span>
+            <span className="r">Review</span>
+          </li>
           {list.items.map((r) => (
             <li key={r.id} className="item cols-repo">
               <ScoreMeter value={r.avg_score} />

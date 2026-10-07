@@ -28,7 +28,7 @@ export default function BarChart({ bars, title, height = 120 }: { bars: Bar[]; t
         return (
           <g key={b.label}>
             <title>{b.tip}</title>
-            <rect x={x} y={y(b.value)} width={bw} height={Math.max(0, height - padB - y(b.value))} style={{ fill: "color-mix(in srgb, var(--accent) 30%, var(--panel))" }} />
+            <rect x={x} y={y(b.value)} width={bw} height={Math.max(0, height - padB - y(b.value))} style={{ fill: "var(--line)" }} />
             {b.value2 ? <rect x={x} y={y(b.value2)} width={bw} height={Math.max(0, height - padB - y(b.value2))} fill="var(--accent)" /> : null}
             {i % every === 0 ? (
               <text x={x + bw / 2} y={height - 4} textAnchor="middle">
@@ -38,6 +38,18 @@ export default function BarChart({ bars, title, height = 120 }: { bars: Bar[]; t
           </g>
         );
       })}
+    </svg>
+  );
+}
+
+// Tiny trend line for KPI tiles; decorative, the tile states the number.
+export function Sparkline({ values, color = "var(--accent)" }: { values: number[]; color?: string }) {
+  if (values.length < 2) return null;
+  const max = Math.max(1, ...values);
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 120},${26 - (v / max) * 24}`).join(" ");
+  return (
+    <svg className="spark" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
+      <polyline fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" points={pts} />
     </svg>
   );
 }

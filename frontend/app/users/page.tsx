@@ -26,12 +26,10 @@ export default async function Users({ searchParams }: { searchParams: Promise<Re
   return (
     <>
       <div className="head">
-        <div>
-          <h1>People</h1>
-          <p>Commit authors over the last {days} days. The score is the mean of each commit&apos;s latest review.</p>
-        </div>
+        <h1>People</h1>
         <Window base="/users" days={days} extra={{ sort, ...(q ? { q } : {}) }} />
       </div>
+      <p className="intro">Commit authors over the last {days} days. The score is the mean of each commit&apos;s latest review.</p>
       <form className="toolbar" action="/users">
         <input type="hidden" name="days" value={days} />
         <input type="hidden" name="sort" value={sort} />
@@ -49,6 +47,13 @@ export default async function Users({ searchParams }: { searchParams: Promise<Re
         </div>
       ) : (
         <ul className="rows">
+          <li className="item hd cols-people" aria-hidden="true">
+            <span>Avg score</span>
+            <span>Person</span>
+            <span className="r">Commits</span>
+            <span className="r">Reviewed</span>
+            <span className="r">Findings</span>
+          </li>
           {list.items.map((u) => (
             <li key={u.id} className="item cols-people">
               <ScoreMeter value={u.avg_score} />

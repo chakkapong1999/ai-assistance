@@ -27,11 +27,9 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
   return (
     <>
       <div className="head">
-        <div>
-          <h1>Pull requests</h1>
-          <p>Each pull request is reviewed as one diff, and again whenever its branch gets a new commit.</p>
-        </div>
+        <h1>Pull requests</h1>
       </div>
+      <p className="intro">Each pull request is reviewed as one diff, and again whenever its branch gets a new commit.</p>
 
       <form className="toolbar" action="/pull-requests">
         <Segments
@@ -96,6 +94,13 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
         </div>
       ) : (
         <ul className="rows">
+          <li className="item hd cols-review" aria-hidden="true">
+            <span>Score</span>
+            <span>Pull request</span>
+            <span>State · review</span>
+            <span className="r">Findings</span>
+            <span className="r">Updated</span>
+          </li>
           {list.items.map((p) => (
             <li key={p.id} className="item cols-review">
               <ScoreMeter value={p.score} />

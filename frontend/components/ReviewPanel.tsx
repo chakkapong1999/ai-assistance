@@ -112,7 +112,7 @@ export default function ReviewPanel({
                           line {lines(f)}
                         </span>
                       </div>
-                      <h4 style={{ margin: 0, fontSize: "1.02rem", fontWeight: 620 }}>{f.title}</h4>
+                      <h4>{f.title}</h4>
                     </header>
                     {f.code_context ? (
                       <DiffView text={f.code_context} layout={layout} mark={[f.line_start, f.line_end]} label={`Code for: ${f.title}`} />

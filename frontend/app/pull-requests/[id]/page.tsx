@@ -28,9 +28,11 @@ export default async function PullRequestPage({ params, searchParams }: { params
 
   return (
     <>
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <Link href="/pull-requests">Pull requests</Link> / <Link href={`/pull-requests?repo_id=${p.repository.id}`}>{p.repository.full_name}</Link>
-      </nav>
+      <div className="head">
+        <nav className="crumbs" aria-label="Breadcrumb">
+          <Link href="/pull-requests">Pull requests</Link> / <Link href={`/pull-requests?repo_id=${p.repository.id}`}>{p.repository.full_name}</Link>
+        </nav>
+      </div>
       {notice ? (
         <p className="banner" role="status">
           {notice}

@@ -2,8 +2,8 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import type { Severity } from "@/lib/api";
 import { guard } from "@/lib/guard";
-import { ago, compact, intParam, num, score, usd } from "@/lib/format";
-import BarChart from "@/components/BarChart";
+import { ago, compact, intParam, num, usd } from "@/lib/format";
+import BarChart, { Sparkline } from "@/components/BarChart";
 import ScoreMeter from "@/components/ScoreMeter";
 import Window from "@/components/Window";
 
@@ -39,15 +39,33 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <Window base="/" days={days} />
       </div>
 
-      <p className="lede">
-        In the last {days} days, <Link href="/commits"><b>{num(o.commits)}</b> commits</Link> were pushed and <b>{num(o.reviewed)}</b> were reviewed
-        {o.avg_score !== null ? (
-          <>
-            , averaging <b>{score(o.avg_score)}</b> out of 100
-          </>
-        ) : null}
-        . The reviewer raised <b>{num(totalFindings)}</b> {totalFindings === 1 ? "finding" : "findings"}, <b>{num(sev.critical)}</b> of them critical.
-      </p>
+      <div className="kpis">
+        <div className="kpi">
+          <Link href="/commits" className="label">
+            Commits
+          </Link>
+          <div className="big">{num(o.commits)}</div>
+          <div className="sub">
+            {num(o.reviewed)} reviewed{o.commits > 0 ? ` · ${Math.round((o.reviewed / o.commits) * 100)}%` : ""}
+          </div>
+          <Sparkline values={o.series.map((p) => p.commits)} />
+        </div>
+        <div className="kpi">
+          <div className="label">Average score</div>
+          <ScoreMeter value={o.avg_score} />
+          <div className="sub">out of 100, last {days} days</div>
+        </div>
+        <div className="kpi">
+          <div className="label">Findings</div>
+          <div className="big">{num(totalFindings)}</div>
+          <div className="sub">from the latest reviews</div>
+        </div>
+        <div className="kpi">
+          <div className="label">Critical</div>
+          <div className={`big${sev.critical > 0 ? " critical" : ""}`}>{num(sev.critical)}</div>
+          <div className="sub">{sev.critical > 0 ? <span className="sev sev-critical">Needs fixing</span> : "None in this window"}</div>
+        </div>
+      </div>
 
       {failed > 0 || waiting > 0 || o.queue_waiting + o.queue_running > 0 ? (
         <section className="section" aria-labelledby="attn">
@@ -61,6 +79,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </header>
           {attention.length > 0 ? (
             <ul className="rows">
+              <li className="item hd" aria-hidden="true" style={{ gridTemplateColumns: "7rem minmax(0,1fr) 6rem" }}>
+                <span>Status</span>
+                <span>Item</span>
+                <span>When</span>
+              </li>
               {attention.map((a) => (
                 <li key={a.key} className="item" style={{ gridTemplateColumns: "7rem minmax(0,1fr) 6rem" }}>
                   <span className="mark bad">{a.kind} failed</span>
@@ -82,8 +105,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <section className="block" aria-labelledby="perday">
           <header style={{ display: "block" }}>
             <h2 id="perday">Commits per day</h2>
-            <p className="muted" style={{ fontSize: ".88rem" }}>
-              Dark part: reviewed. Light part: all commits.
+            <p className="muted" style={{ fontSize: 13 }}>
+              Accent: reviewed. Muted: all commits.
             </p>
           </header>
           <div className="chartbox">
@@ -97,25 +120,27 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <section className="block" aria-labelledby="sev">
           <header style={{ display: "block" }}>
             <h2 id="sev">Findings by severity</h2>
-            <p className="muted" style={{ fontSize: ".88rem" }}>From the latest review of each commit.</p>
+            <p className="muted" style={{ fontSize: 13 }}>From the latest review of each commit.</p>
           </header>
-          {totalFindings > 0 ? (
-            <div className="stack" role="img" aria-label={sevs.map((s) => `${sev[s]} ${s}`).join(", ")}>
-              {sevs.filter((s) => sev[s] > 0).map((s) => (
-                <i key={s} className={`tone-${s}`} style={{ flexGrow: sev[s] }} />
+          <div className="card cardpad">
+            {totalFindings > 0 ? (
+              <div className="stack" role="img" aria-label={sevs.map((s) => `${sev[s]} ${s}`).join(", ")}>
+                {sevs.filter((s) => sev[s] > 0).map((s) => (
+                  <i key={s} className={`tone-${s}`} style={{ flexGrow: sev[s] }} />
+                ))}
+              </div>
+            ) : (
+              <div className="empty">No findings in this window.</div>
+            )}
+            <ul className="legend">
+              {sevs.map((s) => (
+                <li key={s}>
+                  <span className={`sev sev-${s}`}>{s[0].toUpperCase() + s.slice(1)}</span>
+                  <span className="num">{num(sev[s])}</span>
+                </li>
               ))}
-            </div>
-          ) : (
-            <div className="empty">No findings in this window.</div>
-          )}
-          <ul className="legend">
-            {sevs.map((s) => (
-              <li key={s}>
-                <span className={`sev sev-${s}`}>{s[0].toUpperCase() + s.slice(1)}</span>
-                <span className="num">{num(sev[s])}</span>
-              </li>
-            ))}
-          </ul>
+            </ul>
+          </div>
         </section>
       </div>
 
@@ -132,6 +157,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             </div>
           ) : (
             <ul className="rows">
+              <li className="item hd" aria-hidden="true" style={{ gridTemplateColumns: "5.5rem minmax(0,1fr) 5rem" }}>
+                <span>Score</span>
+                <span>Commit</span>
+                <span>When</span>
+              </li>
               {recent.items.map((c) => (
                 <li key={c.id} className="item" style={{ gridTemplateColumns: "5.5rem minmax(0,1fr) 5rem" }}>
                   <ScoreMeter value={c.score} />
@@ -154,36 +184,38 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           <header>
             <h2 id="ledger">Cost and capacity</h2>
           </header>
-          <dl className="ledger">
-            <dt>Review cost</dt>
-            <dd>{usd(u.cost_usd)}</dd>
-            <dt>Cost per run</dt>
-            <dd>{u.avg_cost_usd !== null ? usd(u.avg_cost_usd) : "not measured"}</dd>
-            <dt>Tokens in / out</dt>
-            <dd>
-              {compact(u.tokens_in)} / {compact(u.tokens_out)}
-            </dd>
-            <dt>Review runs</dt>
-            <dd>
-              {num(u.runs)}
-              {u.runs > u.measured_runs ? ` (${num(u.runs - u.measured_runs)} without usage)` : ""}
-            </dd>
-            <dt>Queue</dt>
-            <dd>
-              {o.queue_running} running, {o.queue_waiting} waiting
-            </dd>
-            <dt>Repositories reviewed</dt>
-            <dd>
-              <Link href="/repositories">
-                {o.enabled_repositories} of {o.total_repositories}
-              </Link>
-            </dd>
-            <dt>Active authors</dt>
-            <dd>{num(o.active_authors)}</dd>
-          </dl>
-          <p className="muted" style={{ marginTop: 14, fontSize: ".86rem", maxWidth: "46ch" }}>
-            A commit starts at 100 and loses 15 for each critical, 7 for each major and 2 for each minor finding.
-          </p>
+          <div className="card cardpad">
+            <dl className="ledger">
+              <dt>Review cost</dt>
+              <dd>{usd(u.cost_usd)}</dd>
+              <dt>Cost per run</dt>
+              <dd>{u.avg_cost_usd !== null ? usd(u.avg_cost_usd) : "not measured"}</dd>
+              <dt>Tokens in / out</dt>
+              <dd>
+                {compact(u.tokens_in)} / {compact(u.tokens_out)}
+              </dd>
+              <dt>Review runs</dt>
+              <dd>
+                {num(u.runs)}
+                {u.runs > u.measured_runs ? ` (${num(u.runs - u.measured_runs)} without usage)` : ""}
+              </dd>
+              <dt>Queue</dt>
+              <dd>
+                {o.queue_running} running, {o.queue_waiting} waiting
+              </dd>
+              <dt>Repositories reviewed</dt>
+              <dd>
+                <Link href="/repositories">
+                  {o.enabled_repositories} of {o.total_repositories}
+                </Link>
+              </dd>
+              <dt>Active authors</dt>
+              <dd>{num(o.active_authors)}</dd>
+            </dl>
+            <p className="muted" style={{ marginTop: 14, fontSize: 12.5, maxWidth: "46ch" }}>
+              A commit starts at 100 and loses 15 for each critical, 7 for each major and 2 for each minor finding.
+            </p>
+          </div>
         </section>
       </div>
     </>
