@@ -1,6 +1,6 @@
 # Run from backend/. `make up` starts Postgres via the compose file at the repo root.
 DATABASE_URL ?= postgres://aicr:aicr@localhost:5432/aicr?sslmode=disable
-MIGRATE      ?= docker run --rm --network host -v $(CURDIR)/migrations:/migrations migrate/migrate:v4.18.1 -path=/migrations -database "$(DATABASE_URL)"
+MIGRATE      ?= docker run --rm --network host -v "$(CURDIR)/migrations:/migrations" migrate/migrate:v4.18.1 -path=/migrations -database "$(DATABASE_URL)"
 
 .PHONY: up down migrate migrate-down run-api run-worker test vet fmt build
 
