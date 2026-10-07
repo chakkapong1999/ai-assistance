@@ -25,6 +25,7 @@ import (
 type Bitbucket interface {
 	ingest.CommitLister
 	GetDiff(ctx context.Context, workspace, repo, hash string) (string, error)
+	GetPullRequestDiff(ctx context.Context, workspace, repo string, id int) (string, error)
 }
 
 // Deps are the workers' collaborators.
@@ -68,6 +69,7 @@ func NewClient(d Deps) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &processWebhookWorker{d: d, syncer: store.NewSyncer(d.Pool)})
 	river.AddWorker(workers, &reviewCommitWorker{d: d})
+	river.AddWorker(workers, &reviewPullRequestWorker{d: d})
 	// Always registered, so a poll job left in the queue after polling was
 	// switched off is cancelled instead of failing as an unknown kind.
 	river.AddWorker(workers, &pollReposWorker{d: d, syncer: store.NewSyncer(d.Pool)})

@@ -75,6 +75,13 @@ func (f *fakeBB) GetDiff(context.Context, string, string, string) (string, error
 	return f.diff, f.diffErr
 }
 
+func (f *fakeBB) GetPullRequestDiff(context.Context, string, string, int) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.diffCalls++
+	return f.diff, f.diffErr
+}
+
 func (f *fakeBB) ListCommits(context.Context, string, string, string, string) ([]webhook.Commit, error) {
 	return nil, f.listErr
 }

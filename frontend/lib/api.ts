@@ -145,6 +145,35 @@ export type CommitDetail = CommitSummary & {
   } | null;
 };
 
+export type PullRequestState = "OPEN" | "MERGED" | "DECLINED" | "SUPERSEDED" | "DELETED";
+
+export type PullRequestSummary = {
+  id: number;
+  number: number;
+  title: string;
+  repository: { id: number; full_name: string };
+  author: { id: number | null; name: string; avatar_url: string | null };
+  source_branch: string | null;
+  destination_branch: string | null;
+  state: PullRequestState;
+  review_status: ReviewStatus;
+  review_skip_reason: string | null;
+  files_changed: number | null;
+  additions: number | null;
+  deletions: number | null;
+  score: number | null;
+  findings: number;
+  reviewed_at: string | null;
+  review_outdated: boolean;
+  updated_at: string;
+};
+
+export type PullRequestDetail = PullRequestSummary & {
+  description: string;
+  reviews_count: number;
+  review: CommitDetail["review"];
+};
+
 export type User = {
   id: number;
   display_name: string;
@@ -174,6 +203,10 @@ export const api = {
     call<{ items: CommitSummary[]; next_cursor: string | null }>(`/commits${qs(p)}`),
   commit: (id: number) => call<CommitDetail>(`/commits/${id}`),
   rereview: (id: number) => call<{ status: string }>(`/commits/${id}/rereview`, { method: "POST" }),
+  pullRequests: (p: Record<string, string | number | undefined>) =>
+    call<{ items: PullRequestSummary[]; next_cursor: string | null }>(`/pull-requests${qs(p)}`),
+  pullRequest: (id: number) => call<PullRequestDetail>(`/pull-requests/${id}`),
+  rereviewPullRequest: (id: number) => call<{ status: string }>(`/pull-requests/${id}/rereview`, { method: "POST" }),
   users: (p: Record<string, string | number | undefined>) => call<Page<User>>(`/users${qs(p)}`),
   user: (id: number, days: number) => call<UserDetail>(`/users/${id}${qs({ days })}`),
 };

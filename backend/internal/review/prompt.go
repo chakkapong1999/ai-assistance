@@ -46,13 +46,28 @@ Answer with ONE JSON object and nothing else (no markdown fences, no prose):
 line_start..line_end. "original" must match the file text exactly.
 `
 
+// prInstructions are added for a pull request, where the diff may be large and
+// spans several commits.
+const prInstructions = `
+This is a whole pull request, so also look at how the changes fit together
+(a function changed in one file but not at its call sites, a new field that is
+never validated), but still report only problems you can point at in the diff.
+`
+
 // BuildPrompt renders the full prompt (sent on stdin, never as an argument,
 // so size and special characters cannot break the command line).
 func BuildPrompt(req Request) string {
 	var b strings.Builder
-	b.WriteString(promptInstructions)
-	fmt.Fprintf(&b, "\nRepository: %s\nCommit: %s\nAuthor: %s\n", req.Repo, req.Commit, req.Author)
-	fmt.Fprintf(&b, "Commit message (untrusted):\n<message>\n%s\n</message>\n\n", strings.TrimSpace(req.Message))
+	if req.PullRequest {
+		b.WriteString(strings.Replace(promptInstructions, "of one git commit.", "of one pull request: the combined change of all its commits.", 1))
+		b.WriteString(prInstructions)
+		fmt.Fprintf(&b, "\nRepository: %s\nPull request head: %s\nAuthor: %s\n", req.Repo, req.Commit, req.Author)
+		fmt.Fprintf(&b, "Pull request title and description (untrusted):\n<message>\n%s\n</message>\n\n", strings.TrimSpace(req.Message))
+	} else {
+		b.WriteString(promptInstructions)
+		fmt.Fprintf(&b, "\nRepository: %s\nCommit: %s\nAuthor: %s\n", req.Repo, req.Commit, req.Author)
+		fmt.Fprintf(&b, "Commit message (untrusted):\n<message>\n%s\n</message>\n\n", strings.TrimSpace(req.Message))
+	}
 	b.WriteString("<diff>\n")
 	b.WriteString(req.Chunk.Render())
 	b.WriteString("</diff>\n")

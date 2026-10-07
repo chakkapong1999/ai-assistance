@@ -139,6 +139,61 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/pull-requests:
+    get:
+      summary: List pull requests, most recently updated first
+      description: |
+        Keyset pagination; pass `next_cursor` back as `cursor`. A pull request is
+        reviewed as one diff (all its commits together), separately from its
+        commits' own reviews; `score` and `findings` are from its latest review.
+        Only pull requests of repositories the poller reads are listed.
+      x-required-role: viewer
+      parameters:
+        - { name: repo_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: author_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/PullRequestState" } }
+        - { name: review_status, in: query, schema: { $ref: "#/components/schemas/ReviewStatus" } }
+        - { name: q, in: query, schema: { type: string, maxLength: 200 }, description: Case-insensitive match on title, source branch or number }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/limit" }
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/PullRequestPage" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/pull-requests/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+    get:
+      summary: One pull request with its latest review, findings and suggestions
+      x-required-role: viewer
+      responses:
+        "200":
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/PullRequestDetail" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/pull-requests/{id}/rereview:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+    post:
+      summary: Queue the pull request for another review
+      description: |
+        Sets it back to `pending` and enqueues a job. 409 when a review is
+        running, the repository has review disabled, or the pull request is no
+        longer open. The previous review stays visible until a new one is saved.
+      x-required-role: admin
+      responses:
+        "202":
+          description: Queued
+          content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [queued] } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/users:
     get:
       summary: List people with review statistics for the last N days
@@ -288,6 +343,51 @@ components:
         score: { type: integer, nullable: true, minimum: 0, maximum: 100 }
         findings: { type: integer }
         reviewed_at: { type: string, format: date-time, nullable: true }
+    PullRequestState:
+      type: string
+      enum: [OPEN, MERGED, DECLINED, SUPERSEDED, DELETED]
+      description: Bitbucket's state; `DELETED` means Bitbucket no longer knows the pull request.
+    PullRequestSummary:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        number: { type: integer, description: The pull request id in Bitbucket }
+        title: { type: string }
+        repository:
+          type: object
+          properties: { id: { type: integer, format: int64 }, full_name: { type: string } }
+        author:
+          type: object
+          properties:
+            id: { type: integer, format: int64, nullable: true }
+            name: { type: string }
+            avatar_url: { type: string, nullable: true }
+        source_branch: { type: string, nullable: true }
+        destination_branch: { type: string, nullable: true }
+        state: { $ref: "#/components/schemas/PullRequestState" }
+        review_status: { $ref: "#/components/schemas/ReviewStatus" }
+        review_skip_reason: { type: string, nullable: true }
+        files_changed: { type: integer, nullable: true }
+        additions: { type: integer, nullable: true }
+        deletions: { type: integer, nullable: true }
+        score: { type: integer, nullable: true, minimum: 0, maximum: 100 }
+        findings: { type: integer }
+        reviewed_at: { type: string, format: date-time, nullable: true }
+        review_outdated: { type: boolean, description: The branch has new commits since the latest review }
+        updated_at: { type: string, format: date-time }
+    PullRequestPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/PullRequestSummary" } }
+        next_cursor: { type: string, nullable: true }
+    PullRequestDetail:
+      allOf:
+        - { $ref: "#/components/schemas/PullRequestSummary" }
+        - type: object
+          properties:
+            description: { type: string }
+            reviews_count: { type: integer }
+            review: { allOf: [{ $ref: "#/components/schemas/Review" }], nullable: true }
     CommitPage:
       type: object
       properties:

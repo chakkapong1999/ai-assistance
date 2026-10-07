@@ -117,6 +117,8 @@ type Request struct {
 	Message string
 	Author  string
 	Chunk   Chunk
+	// PullRequest: the chunk belongs to a whole pull request, not one commit.
+	PullRequest bool
 }
 
 // Reviewer reviews one chunk. Implementations must honour ctx and return

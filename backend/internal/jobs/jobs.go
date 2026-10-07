@@ -67,3 +67,29 @@ func (PollReposArgs) InsertOpts() river.InsertOpts {
 		},
 	}
 }
+
+// ReviewPullRequestArgs reviews one stored pull request: the whole diff of its
+// source branch against the destination, taken when the job runs.
+type ReviewPullRequestArgs struct {
+	PullRequestID int64 `json:"pull_request_id"`
+}
+
+func (ReviewPullRequestArgs) Kind() string { return "review_pull_request" }
+
+func (ReviewPullRequestArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		Queue:       QueueReview,
+		MaxAttempts: maxAttempts,
+		// One job per pull request while one is waiting or running. A new push
+		// that arrives during a run is picked up by that job re-queueing itself
+		// (see the worker), not by a second insert.
+		UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: WaitingOrRunning},
+	}
+}
+
+// WaitingOrRunning are the job states in which a job still counts as "the
+// one for this subject"; a finished job does not block a new one.
+var WaitingOrRunning = []rivertype.JobState{
+	rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRunning,
+	rivertype.JobStateRetryable, rivertype.JobStateScheduled,
+}

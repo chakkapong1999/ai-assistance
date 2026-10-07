@@ -179,11 +179,32 @@ func (w *reviewCommitWorker) save(ctx context.Context, id int64, out review.Outc
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	if err := insertReviewTx(ctx, tx, subject{commitID: &id}, out, took); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE commits SET review_status = 'done', review_skip_reason = NULL,
+			files_changed = $2, additions = $3, deletions = $4
+		WHERE id = $1`, id, out.Files, out.Additions, out.Deletions); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// subject is what a review is about: a commit, or a pull request at a head.
+type subject struct {
+	commitID *int64
+	prID     *int64
+	prHead   string
+}
+
+// insertReviewTx writes one review with its findings and code suggestions.
+func insertReviewTx(ctx context.Context, tx pgx.Tx, sub subject, out review.Outcome, took time.Duration) error {
 	var reviewID int64
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO reviews (commit_id, model, prompt_version, score, summary, duration_ms, tokens_in, tokens_out, cost_usd)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-		id, out.Model, review.PromptVersion, out.Score, out.Summary, took.Milliseconds(),
+		INSERT INTO reviews (commit_id, pr_id, pr_head_hash, model, prompt_version, score, summary, duration_ms, tokens_in, tokens_out, cost_usd)
+		VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+		sub.commitID, sub.prID, sub.prHead, out.Model, review.PromptVersion, out.Score, out.Summary, took.Milliseconds(),
 		usageVal(out.Usage, out.Usage.InputTokens), usageVal(out.Usage, out.Usage.OutputTokens), usageVal(out.Usage, out.Usage.CostUSD),
 	).Scan(&reviewID); err != nil {
 		return err
@@ -205,13 +226,7 @@ func (w *reviewCommitWorker) save(ctx context.Context, id int64, out review.Outc
 			}
 		}
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE commits SET review_status = 'done', review_skip_reason = NULL,
-			files_changed = $2, additions = $3, deletions = $4
-		WHERE id = $1`, id, out.Files, out.Additions, out.Deletions); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 // usageVal is v when the reviewer reported usage and NULL otherwise, so the

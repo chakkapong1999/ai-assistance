@@ -9,6 +9,11 @@
 //
 //	curl -X POST 'localhost:7990/_mock/commit?repo=acme/demo&branch=main&message=fix+rounding'
 //
+// Pull requests: open one from a branch, then push to it or merge it:
+//
+//	curl -X POST 'localhost:7990/_mock/pullrequest?repo=acme/demo&source=feature/x&title=Add+x'
+//	curl -X POST 'localhost:7990/_mock/pullrequest?repo=acme/demo&id=1&state=MERGED'
+//
 // Point the worker at it with BITBUCKET_BASE_URL=http://localhost:7990.
 package main
 

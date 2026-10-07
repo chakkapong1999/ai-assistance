@@ -32,6 +32,9 @@ type Data interface {
 	Commits(ctx context.Context, f store.CommitFilter, cursor string, limit int) ([]store.CommitSummary, string, error)
 	Commit(ctx context.Context, id int64) (store.CommitDetail, error)
 	Rereview(ctx context.Context, id int64) error
+	PullRequests(ctx context.Context, f store.PullRequestFilter, cursor string, limit int) ([]store.PullRequestSummary, string, error)
+	PullRequest(ctx context.Context, id int64) (store.PullRequestDetail, error)
+	RereviewPullRequest(ctx context.Context, id int64) error
 	Users(ctx context.Context, q, sort string, days, limit, offset int) ([]store.User, int, error)
 	User(ctx context.Context, id int64, days int) (store.UserDetail, error)
 }
@@ -80,6 +83,9 @@ var table = []route{
 	{Route{"GET", "/api/v1/commits", Viewer}, (*server).listCommits},
 	{Route{"GET", "/api/v1/commits/{id}", Viewer}, (*server).getCommit},
 	{Route{"POST", "/api/v1/commits/{id}/rereview", Admin}, (*server).rereview},
+	{Route{"GET", "/api/v1/pull-requests", Viewer}, (*server).listPullRequests},
+	{Route{"GET", "/api/v1/pull-requests/{id}", Viewer}, (*server).getPullRequest},
+	{Route{"POST", "/api/v1/pull-requests/{id}/rereview", Admin}, (*server).rereviewPullRequest},
 	{Route{"GET", "/api/v1/users", Viewer}, (*server).listUsers},
 	{Route{"GET", "/api/v1/users/{id}", Viewer}, (*server).getUser},
 }
@@ -181,7 +187,7 @@ func (s *server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "not found")
 	case errors.Is(err, store.ErrBadCursor):
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid cursor")
-	case errors.Is(err, store.ErrReviewRunning), errors.Is(err, store.ErrRepoDisabled), errors.Is(err, store.ErrMergeCommit):
+	case errors.Is(err, store.ErrReviewRunning), errors.Is(err, store.ErrRepoDisabled), errors.Is(err, store.ErrMergeCommit), errors.Is(err, store.ErrPRNotOpen):
 		writeError(w, http.StatusConflict, "conflict", err.Error())
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "request cancelled")

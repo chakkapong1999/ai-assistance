@@ -23,6 +23,8 @@ type PollBitbucket interface {
 	ListWorkspaceRepositories(ctx context.Context, workspace string) ([]webhook.Repository, error)
 	ListBranches(ctx context.Context, workspace, repo string) ([]bitbucket.Branch, error)
 	ListRecentCommits(ctx context.Context, workspace, repo, include, exclude string, since time.Time, max int) ([]webhook.Commit, error)
+	ListOpenPullRequests(ctx context.Context, workspace, repo string, max int) ([]webhook.PullRequest, error)
+	GetPullRequest(ctx context.Context, workspace, repo string, id int) (webhook.PullRequest, error)
 }
 
 // PollConfig turns polling on. Without it (or with no Repos) the worker only
@@ -67,6 +69,11 @@ func (w *pollReposWorker) Work(ctx context.Context, job *river.Job[jobs.PollRepo
 	newCommits := 0
 	for _, meta := range repos {
 		n, err := w.pollRepo(ctx, p, meta)
+		if err == nil {
+			// Pull requests are a separate step so a failure in one does not
+			// hide the commits just stored.
+			err = w.pollPullRequests(ctx, p, meta)
+		}
 		if err != nil {
 			if d, ok := snoozeFor(err); ok {
 				w.d.Log.Warn("poll rate limited; resuming later", "retry_after", d)
@@ -77,7 +84,6 @@ func (w *pollReposWorker) Work(ctx context.Context, job *river.Job[jobs.PollRepo
 			}
 			failed++
 			w.d.Log.Error("poll failed for repository", "repo", meta.FullName, "error", err)
-			continue
 		}
 		newCommits += n
 	}

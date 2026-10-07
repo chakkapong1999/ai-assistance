@@ -23,6 +23,7 @@ var (
 	ErrRepoDisabled  = errors.New("review is disabled for this repository")
 	ErrReviewRunning = errors.New("review is running")
 	ErrMergeCommit   = errors.New("merge commits are not reviewed")
+	ErrPRNotOpen     = errors.New("only open pull requests are reviewed")
 )
 
 // Dashboard answers the read queries of the REST API and holds the two small
@@ -541,13 +542,25 @@ func (d *Dashboard) Commit(ctx context.Context, id int64) (CommitDetail, error) 
 		return cd, nil
 	}
 
+	rv, err := d.latestReviewOf(ctx, "commit_id", id)
+	if err != nil {
+		return cd, err
+	}
+	cd.Review = rv
+	return cd, nil
+}
+
+// latestReviewOf loads the newest review of a commit (col = "commit_id") or of
+// a pull request (col = "pr_id") with its findings and suggestions. col is
+// never user input.
+func (d *Dashboard) latestReviewOf(ctx context.Context, col string, id int64) (*Review, error) {
 	rv := &Review{Findings: []Finding{}}
-	err = d.pool.QueryRow(ctx, `
+	err := d.pool.QueryRow(ctx, `
 		SELECT id, model, prompt_version, score, summary, duration_ms, tokens_in, tokens_out, cost_usd::float8, created_at
-		FROM reviews WHERE commit_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`, id).
+		FROM reviews WHERE `+col+` = $1 ORDER BY created_at DESC, id DESC LIMIT 1`, id).
 		Scan(&rv.ID, &rv.Model, &rv.PromptVersion, &rv.Score, &rv.Summary, &rv.DurationMs, &rv.TokensIn, &rv.TokensOut, &rv.CostUSD, &rv.CreatedAt)
 	if err != nil {
-		return cd, fmt.Errorf("review: %w", err)
+		return nil, fmt.Errorf("review: %w", err)
 	}
 
 	rows, err := d.pool.Query(ctx, `
@@ -559,7 +572,7 @@ func (d *Dashboard) Commit(ctx context.Context, id int64) (CommitDetail, error) 
 		ORDER BY CASE f.severity WHEN 'critical' THEN 0 WHEN 'major' THEN 1 WHEN 'minor' THEN 2 ELSE 3 END,
 		         f.file_path, f.line_start, f.id, s.id`, rv.ID)
 	if err != nil {
-		return cd, fmt.Errorf("findings: %w", err)
+		return nil, fmt.Errorf("findings: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -568,7 +581,7 @@ func (d *Dashboard) Commit(ctx context.Context, id int64) (CommitDetail, error) 
 		var orig, sugg, diff, status *string
 		if err := rows.Scan(&f.ID, &f.FilePath, &f.LineStart, &f.LineEnd, &f.Severity, &f.Category, &f.Title, &f.Explanation,
 			&sid, &orig, &sugg, &diff, &status); err != nil {
-			return cd, err
+			return nil, err
 		}
 		if n := len(rv.Findings); n > 0 && rv.Findings[n-1].ID == f.ID {
 			continue // a second suggestion for the same finding; one is shown
@@ -578,11 +591,7 @@ func (d *Dashboard) Commit(ctx context.Context, id int64) (CommitDetail, error) 
 		}
 		rv.Findings = append(rv.Findings, f)
 	}
-	if err := rows.Err(); err != nil {
-		return cd, err
-	}
-	cd.Review = rv
-	return cd, nil
+	return rv, rows.Err()
 }
 
 // Rereview puts a commit back in the queue. The status change and the job
