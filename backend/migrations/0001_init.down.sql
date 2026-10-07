@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS review_rules;
+DROP TABLE IF EXISTS review_feedback;
+DROP TABLE IF EXISTS code_suggestions;
+DROP TABLE IF EXISTS review_findings;
+DROP TABLE IF EXISTS reviews;
+DROP TABLE IF EXISTS webhook_events;
+DROP TABLE IF EXISTS pull_requests;
+DROP TABLE IF EXISTS commits;
+DROP TABLE IF EXISTS repo_permissions;
+DROP TABLE IF EXISTS workspace_members;
+DROP TABLE IF EXISTS user_emails;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS repositories;
+DROP TABLE IF EXISTS projects;
+DROP TABLE IF EXISTS workspaces;
