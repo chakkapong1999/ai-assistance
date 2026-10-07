@@ -88,7 +88,11 @@ func (e cliEnvelope) usage() Usage {
 }
 
 func (c *ClaudeCLI) Review(ctx context.Context, req Request) (Result, error) {
-	args := []string{"-p", "--output-format", "json", "--max-turns", "1"}
+	// --tools "" removes every tool. With tools available the model may try to
+	// read files or search instead of answering, and with --max-turns 1 the CLI
+	// then stops with error_max_turns and no result. The diff is in the prompt;
+	// there is nothing to fetch.
+	args := []string{"-p", "--output-format", "json", "--max-turns", "1", "--tools", ""}
 	if c.opts.Model != "" {
 		args = append(args, "--model", c.opts.Model)
 	}

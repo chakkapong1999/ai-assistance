@@ -516,7 +516,7 @@ EOF
 		t.Fatalf("result: %+v", res)
 	}
 	args, _ := os.ReadFile(filepath.Join(dir, "args"))
-	if got := string(args); got != "-p --output-format json --max-turns 1 --model m1" {
+	if got := string(args); got != "-p --output-format json --max-turns 1 --tools  --model m1" {
 		t.Fatalf("args = %q", got)
 	}
 	stdin, _ := os.ReadFile(filepath.Join(dir, "stdin"))
