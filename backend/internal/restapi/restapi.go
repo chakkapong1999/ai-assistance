@@ -26,6 +26,7 @@ var openapiSpec []byte
 // Data is what the handlers need from storage; *store.Dashboard implements it.
 type Data interface {
 	Overview(ctx context.Context, days int) (store.Overview, error)
+	Health(ctx context.Context) (store.Health, error)
 	Repositories(ctx context.Context, f store.RepoFilter, limit, offset int) ([]store.Repository, int, error)
 	Repository(ctx context.Context, id int64) (store.Repository, error)
 	SetReviewEnabled(ctx context.Context, id int64, enabled bool) (store.Repository, error)
@@ -77,6 +78,7 @@ var table = []route{
 	{Route{"GET", "/api/v1/openapi.yaml", Public}, (*server).openapi},
 	{Route{"GET", "/api/v1/me", Viewer}, (*server).me},
 	{Route{"GET", "/api/v1/overview", Viewer}, (*server).overview},
+	{Route{"GET", "/api/v1/health", Viewer}, (*server).health},
 	{Route{"GET", "/api/v1/repositories", Viewer}, (*server).listRepos},
 	{Route{"GET", "/api/v1/repositories/{id}", Viewer}, (*server).getRepo},
 	{Route{"PATCH", "/api/v1/repositories/{id}", Admin}, (*server).patchRepo},

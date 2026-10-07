@@ -3,6 +3,9 @@
 package jobs
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 )
@@ -92,4 +95,67 @@ func (ReviewPullRequestArgs) InsertOpts() river.InsertOpts {
 var WaitingOrRunning = []rivertype.JobState{
 	rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateRunning,
 	rivertype.JobStateRetryable, rivertype.JobStateScheduled,
+}
+
+// ReconcileArgs runs one reconciliation pass: it finds work that lost its job
+// (an event nobody processed, a commit or pull request marked pending or
+// running with no job behind it) and queues it again. It is inserted on a
+// timer by the worker; a pass that is still running is never doubled up.
+type ReconcileArgs struct{}
+
+func (ReconcileArgs) Kind() string { return "reconcile" }
+
+func (ReconcileArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		Queue:       QueueDefault,
+		MaxAttempts: 3,
+		UniqueOpts:  river.UniqueOpts{ByArgs: true, ByState: WaitingOrRunning},
+	}
+}
+
+// LiveStates are WaitingOrRunning as strings, for SQL against river_job.
+func LiveStates() []string {
+	out := make([]string, len(WaitingOrRunning))
+	for i, s := range WaitingOrRunning {
+		out[i] = string(s)
+	}
+	return out
+}
+
+// Reconciliation thresholds, shared by the worker (which acts) and the health
+// report (which counts what the next pass would act on).
+const (
+	// A thing younger than this is left alone: its job may simply not have
+	// started, or it may have just finished.
+	ReconcileGrace = 10 * time.Minute
+	// A job that ended less than this long ago may still be settling the row
+	// it belongs to (the status is written just before the job is finalised).
+	ReconcileSettle = 5 * time.Minute
+	// How many jobs one event, commit or pull request may have had before the
+	// reconciler stops queueing another: a subject that keeps losing its job is
+	// not going to be fixed by one more try.
+	ReconcileMaxJobs = 4
+	ReconcileBatch   = 100
+)
+
+// NoLiveJobSQL is a SQL fragment for a WHERE clause: no job of `kind` for the
+// subject whose id is `subjectID` (a column expression) is waiting or running,
+// and none ended in the last ReconcileSettle. With respectCancel, a cancelled
+// job also counts (for a webhook event that means its payload can never be
+// parsed, so queueing it again is pointless). It uses $1 (the LiveStates) and
+// $2 (ReconcileSettle in seconds, as an int).
+func NoLiveJobSQL(kind, key, subjectID string, respectCancel bool) string {
+	cancelled := ""
+	if respectCancel {
+		cancelled = " OR j.state = 'cancelled'"
+	}
+	return fmt.Sprintf(`
+		AND NOT EXISTS (SELECT 1 FROM river_job j WHERE j.kind = '%[1]s' AND (j.args->>'%[2]s')::bigint = %[3]s
+		                AND (j.state::text = ANY($1)%[4]s
+		                     OR j.finalized_at > now() - make_interval(secs => $2::int)))`, kind, key, subjectID, cancelled)
+}
+
+// JobCountSQL is a SQL expression: how many jobs of `kind` the subject has had.
+func JobCountSQL(kind, key, subjectID string) string {
+	return fmt.Sprintf(`(SELECT count(*) FROM river_job j WHERE j.kind = '%s' AND (j.args->>'%s')::bigint = %s)`, kind, key, subjectID)
 }

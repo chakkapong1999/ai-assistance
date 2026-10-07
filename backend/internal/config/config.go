@@ -59,6 +59,10 @@ type Config struct {
 	// PollLookback bounds how far back the first poll of a branch reads.
 	PollLookback time.Duration
 
+	// ReconcileInterval is how often the worker looks for work that lost its
+	// job and queues it again.
+	ReconcileInterval time.Duration
+
 	// ReviewNewRepos: a repository first seen by the worker starts with review
 	// on (default) or off. It only decides the starting value; an admin's later
 	// choice in the dashboard is never overwritten.
@@ -114,8 +118,9 @@ func parseAPITokens(raw string) ([]APIToken, error) {
 }
 
 const (
-	defaultPollInterval = 5 * time.Minute
-	defaultPollLookback = 7 * 24 * time.Hour
+	defaultPollInterval      = 5 * time.Minute
+	defaultPollLookback      = 7 * 24 * time.Hour
+	defaultReconcileInterval = 5 * time.Minute
 	// MinPollInterval protects the Bitbucket API quota.
 	MinPollInterval = time.Minute
 )
@@ -193,11 +198,12 @@ func Load(mode string, getenv func(string) string) (Config, error) {
 	}
 	c.PollInterval = defaultPollInterval
 	c.PollLookback = defaultPollLookback
+	c.ReconcileInterval = defaultReconcileInterval
 	for _, d := range []struct {
 		key string
 		dst *time.Duration
 		min time.Duration
-	}{{"POLL_INTERVAL", &c.PollInterval, MinPollInterval}, {"POLL_LOOKBACK", &c.PollLookback, time.Hour}} {
+	}{{"POLL_INTERVAL", &c.PollInterval, MinPollInterval}, {"POLL_LOOKBACK", &c.PollLookback, time.Hour}, {"RECONCILE_INTERVAL", &c.ReconcileInterval, time.Minute}} {
 		if v := get(d.key, ""); v != "" {
 			parsed, err := time.ParseDuration(v)
 			switch {

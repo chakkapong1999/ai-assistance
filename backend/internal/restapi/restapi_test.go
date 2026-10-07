@@ -745,3 +745,58 @@ func TestOverviewUsage(t *testing.T) {
 		t.Errorf("unmeasured review must be null: %+v", d.Review)
 	}
 }
+
+func TestHealth(t *testing.T) {
+	e := setup(t)
+	exec(t, `TRUNCATE webhook_events`)
+	type health struct {
+		Status   string   `json:"status"`
+		Problems []string `json:"problems"`
+		Webhooks struct {
+			Unprocessed int  `json:"unprocessed"`
+			Oldest      *int `json:"oldest_age_seconds"`
+		} `json:"webhooks"`
+		Stuck struct {
+			Commits int `json:"commits"`
+		} `json:"stuck"`
+		LastPoll      *struct{ OK bool } `json:"last_poll"`
+		LastReconcile *struct {
+			Commits int `json:"commits"`
+		} `json:"last_reconcile"`
+	}
+	var h health
+	e.get(t, "/api/v1/health", &h)
+	// Fresh pending commits are inside the grace period: nothing is wrong yet.
+	if h.Status != "ok" || len(h.Problems) != 0 || h.Stuck.Commits != 0 || h.Webhooks.Unprocessed != 0 || h.Webhooks.Oldest != nil || h.LastPoll != nil || h.LastReconcile != nil {
+		t.Fatalf("healthy = %+v", h)
+	}
+	if code, _ := e.do(t, "GET", "/api/v1/health", "", nil); code != 401 {
+		t.Errorf("anonymous health = %d, want 401", code)
+	}
+
+	// Pending commits that lost their job, and a delivery nobody processed.
+	exec(t, `UPDATE commits SET created_at = now() - interval '1 hour' WHERE review_status = 'pending'`)
+	exec(t, `INSERT INTO webhook_events (request_uuid, event_key, payload, received_at) VALUES ('u1', 'repo:push', '{}', now() - interval '1 hour')`)
+	exec(t, `INSERT INTO river_job (kind, state, args, max_attempts, finalized_at, metadata) VALUES
+		('poll_repos', 'discarded', '{}', 1, now(), '{}'),
+		('reconcile', 'completed', '{}', 3, now() - interval '2 hours', '{"output":{"commits":3}}')`)
+	h = health{}
+	e.get(t, "/api/v1/health", &h)
+	if h.Status != "degraded" || h.Stuck.Commits != 2 || h.Webhooks.Unprocessed != 1 || h.Webhooks.Oldest == nil || *h.Webhooks.Oldest < 3500 {
+		t.Fatalf("degraded = %+v", h)
+	}
+	if h.LastPoll == nil || h.LastPoll.OK || h.LastReconcile == nil || h.LastReconcile.Commits != 3 {
+		t.Errorf("last poll/reconcile = %+v / %+v", h.LastPoll, h.LastReconcile)
+	}
+	if len(h.Problems) != 4 { // webhook wait, stuck, failed poll, reconcile silent
+		t.Errorf("problems = %q", h.Problems)
+	}
+
+	// A live job for a commit means it is not stuck.
+	exec(t, `INSERT INTO river_job (kind, state, args, max_attempts) SELECT 'review_commit', 'available', jsonb_build_object('commit_id', id), 3 FROM commits WHERE review_status = 'pending'`)
+	h = health{}
+	e.get(t, "/api/v1/health", &h)
+	if h.Stuck.Commits != 0 {
+		t.Errorf("commits with a live job are stuck: %+v", h)
+	}
+}

@@ -44,6 +44,10 @@ type Deps struct {
 	// review on. Off (the zero value) keeps the old behaviour.
 	ReviewNewRepos bool
 
+	// ReconcileInterval is how often to look for work that lost its job and
+	// queue it again. Zero turns reconciling off (tests); the server always sets it.
+	ReconcileInterval time.Duration
+
 	WebhookWorkers int           // default 4
 	PollInterval   time.Duration // how often idle queues look for jobs; default River's (1s)
 }
@@ -78,7 +82,16 @@ func NewClient(d Deps) (*river.Client[pgx.Tx], error) {
 	// switched off is cancelled instead of failing as an unknown kind.
 	river.AddWorker(workers, &pollReposWorker{d: d, syncer: store.NewSyncer(d.Pool).ReviewNewRepos(d.ReviewNewRepos)})
 
+	river.AddWorker(workers, &reconcileWorker{d: d})
+
 	var periodic []*river.PeriodicJob
+	if d.ReconcileInterval > 0 {
+		periodic = append(periodic, river.NewPeriodicJob(
+			river.PeriodicInterval(d.ReconcileInterval),
+			func() (river.JobArgs, *river.InsertOpts) { return jobs.ReconcileArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: true},
+		))
+	}
 	if d.Poll.enabled() {
 		if d.Poll.Interval <= 0 {
 			return nil, errors.New("worker: Poll.Interval must be positive")

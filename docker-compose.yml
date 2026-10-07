@@ -55,6 +55,7 @@ services:
       POLL_REPOS: ${POLL_REPOS:-}
       POLL_INTERVAL: ${POLL_INTERVAL:-5m}
       POLL_LOOKBACK: ${POLL_LOOKBACK:-168h}
+      RECONCILE_INTERVAL: ${RECONCILE_INTERVAL:-5m}
     depends_on:
       postgres:
         condition: service_healthy
