@@ -42,3 +42,9 @@ export function DiffStat({ files, additions, deletions }: { files: number | null
     </span>
   );
 }
+
+// Meta line parts; the gap between spans is the separator.
+export function Parts({ items, empty }: { items: (string | null | undefined | false)[]; empty: string }) {
+  const xs = items.filter((x): x is string => !!x);
+  return xs.length ? xs.map((x) => <span key={x}>{x}</span>) : <span>{empty}</span>;
+}

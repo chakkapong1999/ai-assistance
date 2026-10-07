@@ -4,7 +4,8 @@ import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { intParam, num } from "@/lib/format";
 import BarChart from "@/components/BarChart";
-import ScoreMeter from "@/components/ScoreMeter";
+import Score from "@/components/Score";
+import { Parts } from "@/components/badges";
 import Window from "@/components/Window";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -28,11 +29,11 @@ export default async function UserPage({ params, searchParams }: { params: Promi
       </div>
       <header className="subject">
         <h1>{u.display_name}</h1>
-        <div className="meta">{[u.job_title, u.department, u.email].filter(Boolean).join(" · ") || (u.linked ? "Bitbucket account" : "Known only from commit author names")}</div>
+        <div className="meta"><Parts items={[u.job_title, u.department, u.email]} empty={u.linked ? "Bitbucket account" : "Known only from commit author names"} /></div>
       </header>
 
       <section className="verdict" aria-label={`Last ${days} days`}>
-        <ScoreMeter value={u.avg_score} large />
+        <Score value={u.avg_score} large />
         <div className="kpis">
           <div className="kpi">
             <Link href={`/commits?author_id=${u.id}`} className="label">
@@ -54,7 +55,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
       <section className="section" aria-labelledby="weekly">
         <header>
           <h2 id="weekly">Commits per week</h2>
-          <p>Weeks start on Monday (UTC). Weeks without commits are left out.</p>
+          <p>Grey is every commit. The coloured part was reviewed: green for a week averaging 90 and up, amber 70 to 89, red below 70. Weeks start on Monday (UTC); empty weeks are left out.</p>
         </header>
         {u.trend.length === 0 ? (
           <div className="empty">No commits in this window.</div>
@@ -62,7 +63,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
           <div className="chartbox">
             <BarChart
               title="Commits per week"
-              bars={u.trend.map((w) => ({ label: w.week.slice(5), value: w.commits, value2: w.reviewed, tip: `Week of ${w.week}: ${w.commits} commits, ${w.reviewed} reviewed${w.avg_score !== null ? `, average score ${w.avg_score}` : ""}` }))}
+              bars={u.trend.map((w) => ({ label: w.week.slice(5), value: w.commits, value2: w.reviewed, score: w.avg_score, tip: `Week of ${w.week}: ${w.commits} commits, ${w.reviewed} reviewed${w.avg_score !== null ? `, average score ${w.avg_score}` : ""}` }))}
             />
           </div>
         )}

@@ -3,7 +3,7 @@ import type { CommitDetail, Finding, Severity } from "@/lib/api";
 import { dateTime, num, usd } from "@/lib/format";
 import CopyButton from "./CopyButton";
 import DiffView from "./DiffView";
-import ScoreMeter from "./ScoreMeter";
+import Score from "./Score";
 import { SeverityMark } from "./badges";
 
 type Review = NonNullable<CommitDetail["review"]>;
@@ -52,7 +52,7 @@ export default function ReviewPanel({
   return (
     <>
       <section className="verdict" aria-label="Verdict">
-        <ScoreMeter value={r.score} large />
+        <Score value={r.score} large />
         <div>
           <p className="summary">{r.summary || "The reviewer left no summary."}</p>
           <p className="facts">

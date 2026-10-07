@@ -2,7 +2,8 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { intParam, num, one } from "@/lib/format";
-import ScoreMeter from "@/components/ScoreMeter";
+import Score from "@/components/Score";
+import { Parts } from "@/components/badges";
 import Segments from "@/components/Segments";
 import Window from "@/components/Window";
 
@@ -48,7 +49,7 @@ export default async function Users({ searchParams }: { searchParams: Promise<Re
       ) : (
         <ul className="rows">
           <li className="item hd cols-people" aria-hidden="true">
-            <span>Avg score</span>
+            <span>Score</span>
             <span>Person</span>
             <span className="r">Commits</span>
             <span className="r">Reviewed</span>
@@ -56,13 +57,13 @@ export default async function Users({ searchParams }: { searchParams: Promise<Re
           </li>
           {list.items.map((u) => (
             <li key={u.id} className="item cols-people">
-              <ScoreMeter value={u.avg_score} />
+              <Score value={u.avg_score} />
               <div>
                 <Link href={`/users/${u.id}?days=${days}`} className="title">
                   {u.display_name}
                 </Link>
                 <div className="meta">
-                  {[u.job_title, u.email, u.linked ? null : "Not linked to Bitbucket"].filter(Boolean).join(" · ") || "Bitbucket account"}
+                  <Parts items={[u.job_title, u.email, u.linked ? null : "Not linked to Bitbucket"]} empty="Bitbucket account" />
                 </div>
               </div>
               <div className="side r">{num(u.commits)} commits</div>

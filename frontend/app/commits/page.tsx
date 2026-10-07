@@ -2,7 +2,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { ago, dateTime, one } from "@/lib/format";
-import ScoreMeter from "@/components/ScoreMeter";
+import Score from "@/components/Score";
 import Segments from "@/components/Segments";
 import { DiffStat, StatusBadge } from "@/components/badges";
 
@@ -97,16 +97,17 @@ export default async function Commits({ searchParams }: { searchParams: Promise<
           </li>
           {list.items.map((c) => (
             <li key={c.id} className="item cols-review">
-              <ScoreMeter value={c.score} />
+              <Score value={c.score} />
               <div>
                 <Link href={`/commits/${c.id}`} className="title">
                   {c.subject || "(no message)"}
                 </Link>
                 <div className="meta">
-                  <span className="mono">{c.hash.slice(0, 8)}</span> · {c.repository.full_name}
-                  {c.branch ? ` · ${c.branch}` : ""}
-                  {c.is_merge ? " · merge" : ""} ·{" "}
-                  {c.author.id ? <Link href={`/users/${c.author.id}`}>{c.author.name}</Link> : c.author.name || "unknown author"}
+                  <span className="mono">{c.hash.slice(0, 8)}</span>
+                  <span>{c.repository.full_name}</span>
+                  {c.branch ? <span>{c.branch}</span> : null}
+                  {c.is_merge ? <span>Merge</span> : null}
+                  {c.author.id ? <Link href={`/users/${c.author.id}`}>{c.author.name}</Link> : <span>{c.author.name || "unknown author"}</span>}
                 </div>
               </div>
               <div className="side">

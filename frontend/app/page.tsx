@@ -3,13 +3,14 @@ import { api } from "@/lib/api";
 import type { Severity } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { ago, compact, intParam, num, usd } from "@/lib/format";
-import BarChart, { Sparkline } from "@/components/BarChart";
-import ScoreMeter from "@/components/ScoreMeter";
+import BarChart from "@/components/BarChart";
+import Score from "@/components/Score";
 import Window from "@/components/Window";
 
 export const metadata = { title: "Overview" };
 
 const sevs: Severity[] = ["critical", "major", "minor", "info"];
+const plural = (n: number, word: string) => `${num(n)} ${n === 1 ? word : `${word}s`}`;
 
 export default async function Overview({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const days = intParam((await searchParams).days, 30, 1, 365);
@@ -39,33 +40,39 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <Window base="/" days={days} />
       </div>
 
-      <div className="kpis">
-        <div className="kpi">
-          <Link href="/commits" className="label">
-            Commits
-          </Link>
-          <div className="big">{num(o.commits)}</div>
-          <div className="sub">
-            {num(o.reviewed)} reviewed{o.commits > 0 ? ` · ${Math.round((o.reviewed / o.commits) * 100)}%` : ""}
-          </div>
-          <Sparkline values={o.series.map((p) => p.commits)} />
-        </div>
-        <div className="kpi">
-          <div className="label">Average score</div>
-          <ScoreMeter value={o.avg_score} />
-          <div className="sub">out of 100, last {days} days</div>
-        </div>
-        <div className="kpi">
-          <div className="label">Findings</div>
-          <div className="big">{num(totalFindings)}</div>
-          <div className="sub">from the latest reviews</div>
-        </div>
-        <div className="kpi">
-          <div className="label">Critical</div>
-          <div className={`big${sev.critical > 0 ? " critical" : ""}`}>{num(sev.critical)}</div>
-          <div className="sub">{sev.critical > 0 ? <span className="sev sev-critical">Needs fixing</span> : "None in this window"}</div>
-        </div>
-      </div>
+      <section className="hero" aria-label={`Last ${days} days`}>
+        {o.commits === 0 ? (
+          <p>No commits in the last {days} days.</p>
+        ) : (
+          <p>
+            <Link href="/commits">{plural(o.commits, "commit")}</Link> in the last {days} days,{" "}
+            {o.reviewed === 0 ? (
+              "none reviewed yet."
+            ) : (
+              <>
+                <strong>{o.reviewed === o.commits ? "all" : num(o.reviewed)} reviewed</strong>.
+                {o.avg_score !== null ? (
+                  <>
+                    {" "}They average <Score value={o.avg_score} /> with{" "}
+                  </>
+                ) : (
+                  " They have "
+                )}
+                <strong>{totalFindings === 0 ? "no findings" : plural(totalFindings, "finding")}</strong>
+                {sev.critical > 0 ? (
+                  <>
+                    , and <strong className="crit">{num(sev.critical)} critical</strong> {sev.critical === 1 ? "needs" : "need"} fixing.
+                  </>
+                ) : totalFindings > 0 ? (
+                  ", none critical."
+                ) : (
+                  "."
+                )}
+              </>
+            )}
+          </p>
+        )}
+      </section>
 
       {failed > 0 || waiting > 0 || o.queue_waiting + o.queue_running > 0 ? (
         <section className="section" aria-labelledby="attn">
@@ -105,14 +112,12 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <section className="block" aria-labelledby="perday">
           <header style={{ display: "block" }}>
             <h2 id="perday">Commits per day</h2>
-            <p>
-              Accent: reviewed. Muted: all commits.
-            </p>
+            <p>Grey is every commit. The coloured part was reviewed: green for a day averaging 90 and up, amber 70 to 89, red below 70.</p>
           </header>
           <div className="chartbox">
             <BarChart
               title={`Commits per day, last ${days} days`}
-              bars={o.series.map((p) => ({ label: label(p.day), value: p.commits, value2: p.reviewed, tip: `${p.day}: ${p.commits} commits, ${p.reviewed} reviewed${p.avg_score !== null ? `, average score ${p.avg_score}` : ""}` }))}
+              bars={o.series.map((p) => ({ label: label(p.day), value: p.commits, value2: p.reviewed, score: p.avg_score, tip: `${p.day}: ${p.commits} commits, ${p.reviewed} reviewed${p.avg_score !== null ? `, average score ${p.avg_score}` : ""}` }))}
             />
           </div>
         </section>
@@ -122,7 +127,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <h2 id="sev">Findings by severity</h2>
             <p>From the latest review of each commit.</p>
           </header>
-          <div className="card cardpad">
+          <div>
             {totalFindings > 0 ? (
               <div className="stack" role="img" aria-label={sevs.map((s) => `${sev[s]} ${s}`).join(", ")}>
                 {sevs.filter((s) => sev[s] > 0).map((s) => (
@@ -164,13 +169,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               </li>
               {recent.items.map((c) => (
                 <li key={c.id} className="item cols-recent">
-                  <ScoreMeter value={c.score} />
+                  <Score value={c.score} />
                   <div>
                     <Link href={`/commits/${c.id}`} className="title">
                       {c.subject || "(no message)"}
                     </Link>
                     <div className="meta">
-                      {c.repository.full_name} · {c.author.name || "unknown author"} · {c.findings} {c.findings === 1 ? "finding" : "findings"}
+                      <span>{c.repository.full_name}</span>
+                      <span>{c.author.name || "unknown author"}</span>
+                      <span>{plural(c.findings, "finding")}</span>
                     </div>
                   </div>
                   <time>{ago(c.committed_at)}</time>
@@ -184,7 +191,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           <header>
             <h2 id="ledger">Cost and capacity</h2>
           </header>
-          <div className="card cardpad">
+          <div>
             <dl className="ledger">
               <dt>Review cost</dt>
               <dd>{usd(u.cost_usd)}</dd>
@@ -213,7 +220,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               <dd>{num(o.active_authors)}</dd>
             </dl>
             <p className="muted" style={{ marginTop: 16, fontSize: 12.5, maxWidth: "46ch" }}>
-              A commit starts at 100 and loses 15 for each critical, 7 for each major and 2 for each minor finding.
+              A commit starts at 100 and loses 15 for each critical, 7 for each major and 2 for each minor finding. Scores of 90 and up show green, 70 to 89 amber, below 70 red.
             </p>
           </div>
         </section>

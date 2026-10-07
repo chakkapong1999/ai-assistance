@@ -60,7 +60,7 @@ export default async function CommitPage({ params, searchParams }: { params: Pro
         </div>
       </header>
 
-      {c.message.includes("\n") ? <div className="body-text">{c.message}</div> : null}
+      {c.message.trim().includes("\n") ? <div className="body-text">{c.message}</div> : null}
 
       {!r ? (
         <div className="empty" style={{ marginTop: 24 }}>

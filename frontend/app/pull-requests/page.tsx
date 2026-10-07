@@ -2,7 +2,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { ago, dateTime, one } from "@/lib/format";
-import ScoreMeter from "@/components/ScoreMeter";
+import Score from "@/components/Score";
 import Segments from "@/components/Segments";
 import { DiffStat, PRStateBadge, StatusBadge } from "@/components/badges";
 
@@ -97,25 +97,30 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
           <li className="item hd cols-review" aria-hidden="true">
             <span>Score</span>
             <span>Pull request</span>
-            <span>State · review</span>
+            <span>Status</span>
             <span className="r">Findings</span>
             <span className="r">Updated</span>
           </li>
           {list.items.map((p) => (
             <li key={p.id} className="item cols-review">
-              <ScoreMeter value={p.score} />
+              <Score value={p.score} />
               <div>
                 <Link href={`/pull-requests/${p.id}`} className="title">
                   {p.title || "(no title)"}
                 </Link>
                 <div className="meta">
-                  #{p.number} · {p.repository.full_name}
-                  {p.source_branch ? ` · ${p.source_branch} into ${p.destination_branch ?? "?"}` : ""} ·{" "}
-                  {p.author.id ? <Link href={`/users/${p.author.id}`}>{p.author.name}</Link> : p.author.name || "unknown author"}
+                  <span>#{p.number}</span>
+                  <span>{p.repository.full_name}</span>
+                  {p.source_branch ? (
+                    <span>
+                      {p.source_branch} into {p.destination_branch ?? "?"}
+                    </span>
+                  ) : null}
+                  {p.author.id ? <Link href={`/users/${p.author.id}`}>{p.author.name}</Link> : <span>{p.author.name || "unknown author"}</span>}
                 </div>
               </div>
               <div className="side">
-                <PRStateBadge state={p.state} /> <br />
+                <PRStateBadge state={p.state} />
                 <StatusBadge status={p.review_status} reason={p.review_skip_reason} />
                 {p.review_outdated ? <div className="muted" style={{ fontSize: ".8rem" }}>New commits since review</div> : null}
               </div>

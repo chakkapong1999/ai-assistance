@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import "@fontsource-variable/geist";
+import "@fontsource-variable/schibsted-grotesk";
 import "@fontsource-variable/geist-mono";
-import Rail from "@/components/Rail";
+import TopBar from "@/components/TopBar";
 import { api } from "@/lib/api";
 import "./globals.css";
 
@@ -20,10 +20,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body>
-        <div className="shell">
-          <Rail role={role} />
-          <main className="main">{children}</main>
-        </div>
+        <TopBar role={role} />
+        <main className="main">{children}</main>
       </body>
     </html>
   );

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { ago, num, one } from "@/lib/format";
-import ScoreMeter from "@/components/ScoreMeter";
+import Score from "@/components/Score";
+import { Parts } from "@/components/badges";
 import { toggleReview } from "./actions";
 
 export const metadata = { title: "Repositories" };
@@ -47,7 +48,7 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
       ) : (
         <ul className="rows">
           <li className="item hd cols-repo" aria-hidden="true">
-            <span>Avg score</span>
+            <span>Score</span>
             <span>Repository</span>
             <span className="r">Reviewed</span>
             <span className="r">Last commit</span>
@@ -55,12 +56,12 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
           </li>
           {list.items.map((r) => (
             <li key={r.id} className="item cols-repo">
-              <ScoreMeter value={r.avg_score} />
+              <Score value={r.avg_score} />
               <div>
                 <Link href={`/commits?repo_id=${r.id}`} className="title">
                   {r.full_name}
                 </Link>
-                <div className="meta">{[r.project_key === "NONE" ? null : r.project_name, r.main_language, r.default_branch].filter(Boolean).join(" · ") || "No details yet"}</div>
+                <div className="meta"><Parts items={[r.project_key === "NONE" ? null : r.project_name, r.main_language, r.default_branch]} empty="No details yet" /></div>
               </div>
               <div className="side r">
                 {num(r.reviewed)} of {num(r.commits)}

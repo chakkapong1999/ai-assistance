@@ -1,6 +1,8 @@
-// Server-rendered SVG bars. `value2` (optional) is drawn in front as a lighter
-// share of `value`, e.g. reviewed out of all commits.
-export type Bar = { label: string; value: number; value2?: number; tip: string };
+import { tone } from "@/lib/format";
+
+// Server-rendered SVG bars. `value2` (optional) is drawn in front as a share of
+// `value`, e.g. reviewed out of all commits, coloured by that bar's `score`.
+export type Bar = { label: string; value: number; value2?: number; score?: number | null; tip: string };
 
 export default function BarChart({ bars, title, height = 120 }: { bars: Bar[]; title: string; height?: number }) {
   const W = 600;
@@ -29,7 +31,7 @@ export default function BarChart({ bars, title, height = 120 }: { bars: Bar[]; t
           <g key={b.label}>
             <title>{b.tip}</title>
             <rect x={x} y={y(b.value)} width={bw} height={Math.max(0, height - padB - y(b.value))} rx={Math.min(2, bw / 4)} style={{ fill: "var(--line)" }} />
-            {b.value2 ? <rect x={x} y={y(b.value2)} width={bw} height={Math.max(0, height - padB - y(b.value2))} rx={Math.min(2, bw / 4)} fill="var(--accent)" /> : null}
+            {b.value2 ? <rect x={x} y={y(b.value2)} width={bw} height={Math.max(0, height - padB - y(b.value2))} rx={Math.min(2, bw / 4)} className={`tone-${tone(b.score)}`} /> : null}
             {i % every === 0 ? (
               <text x={x + bw / 2} y={height - 4} textAnchor="middle">
                 {b.label}
@@ -38,18 +40,6 @@ export default function BarChart({ bars, title, height = 120 }: { bars: Bar[]; t
           </g>
         );
       })}
-    </svg>
-  );
-}
-
-// Tiny trend line for KPI tiles; decorative, the tile states the number.
-export function Sparkline({ values, color = "var(--accent)" }: { values: number[]; color?: string }) {
-  if (values.length < 2) return null;
-  const max = Math.max(1, ...values);
-  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 120},${26 - (v / max) * 24}`).join(" ");
-  return (
-    <svg className="spark" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
-      <polyline fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" points={pts} />
     </svg>
   );
 }
