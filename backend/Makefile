@@ -2,7 +2,7 @@
 DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/ai_review?sslmode=disable
 MIGRATE      ?= docker run --rm --network host -v "$(CURDIR)/migrations:/migrations" migrate/migrate:v4.18.1 -path=/migrations -database "$(DATABASE_URL)"
 
-.PHONY: up down migrate migrate-down run-api run-worker test vet fmt build
+.PHONY: up down migrate migrate-river migrate-down run-api run-worker test vet fmt build
 
 up:
 	docker compose -f ../docker-compose.yml up -d postgres
@@ -12,6 +12,9 @@ down:
 
 migrate:
 	$(MIGRATE) up
+
+migrate-river:
+	DATABASE_URL="$(DATABASE_URL)" go run ./cmd/rivermigrate up
 
 migrate-down:
 	$(MIGRATE) down 1
