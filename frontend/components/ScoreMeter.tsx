@@ -1,11 +1,11 @@
 import { score as fmt } from "@/lib/format";
 
-// A 0–100 bar with ticks at 70 and 90, the two cut-offs that colour a score.
+// A 0-100 bar with ticks at 70 and 90, the two cut-offs that colour a score.
 export default function ScoreMeter({ value, large = false }: { value: number | null | undefined; large?: boolean }) {
   if (value === null || value === undefined) {
     return (
       <div className={`meter none${large ? " lg" : ""}`}>
-        <b aria-label="No score">–</b>
+        <b>No score</b>
       </div>
     );
   }

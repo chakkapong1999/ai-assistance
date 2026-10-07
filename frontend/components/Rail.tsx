@@ -61,8 +61,8 @@ export default function Rail({ role }: { role: "viewer" | "admin" | null }) {
     <aside className="rail">
       <Link href="/" className="brand" aria-label="AI code review, overview">
         <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
-          <rect x="2" y="5" width="12" height="4" rx="1" fill="#ff8b82" />
-          <rect x="2" y="13" width="18" height="4" rx="1" fill="#5fd194" />
+          <rect x="2" y="5" width="12" height="4" rx="1" style={{ fill: "var(--del)" }} />
+          <rect x="2" y="13" width="18" height="4" rx="1" style={{ fill: "var(--add)" }} />
         </svg>
         <span>Code review</span>
       </Link>

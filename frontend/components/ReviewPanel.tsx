@@ -22,7 +22,7 @@ function byFile(findings: Finding[]): Group[] {
     .sort((a, b) => Math.min(...a.findings.map((f) => rank(f.severity))) - Math.min(...b.findings.map((f) => rank(f.severity))) || a.path.localeCompare(b.path));
 }
 
-const lines = (f: Finding) => (f.line_end > f.line_start ? `${f.line_start}–${f.line_end}` : String(f.line_start));
+const lines = (f: Finding) => (f.line_end > f.line_start ? `${f.line_start}-${f.line_end}` : String(f.line_start));
 
 function Path({ path }: { path: string }) {
   const i = path.lastIndexOf("/");

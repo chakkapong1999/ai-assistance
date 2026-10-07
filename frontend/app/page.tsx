@@ -79,13 +79,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </header>
           {attention.length > 0 ? (
             <ul className="rows">
-              <li className="item hd" aria-hidden="true" style={{ gridTemplateColumns: "7rem minmax(0,1fr) 6rem" }}>
+              <li className="item hd cols-attn" aria-hidden="true">
                 <span>Status</span>
                 <span>Item</span>
                 <span>When</span>
               </li>
               {attention.map((a) => (
-                <li key={a.key} className="item" style={{ gridTemplateColumns: "7rem minmax(0,1fr) 6rem" }}>
+                <li key={a.key} className="item cols-attn">
                   <span className="mark bad">{a.kind} failed</span>
                   <div>
                     <Link href={a.href} className="title">
@@ -105,7 +105,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <section className="block" aria-labelledby="perday">
           <header style={{ display: "block" }}>
             <h2 id="perday">Commits per day</h2>
-            <p className="muted" style={{ fontSize: 13 }}>
+            <p>
               Accent: reviewed. Muted: all commits.
             </p>
           </header>
@@ -120,7 +120,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <section className="block" aria-labelledby="sev">
           <header style={{ display: "block" }}>
             <h2 id="sev">Findings by severity</h2>
-            <p className="muted" style={{ fontSize: 13 }}>From the latest review of each commit.</p>
+            <p>From the latest review of each commit.</p>
           </header>
           <div className="card cardpad">
             {totalFindings > 0 ? (
@@ -157,13 +157,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             </div>
           ) : (
             <ul className="rows">
-              <li className="item hd" aria-hidden="true" style={{ gridTemplateColumns: "5.5rem minmax(0,1fr) 5rem" }}>
+              <li className="item hd cols-recent" aria-hidden="true">
                 <span>Score</span>
                 <span>Commit</span>
                 <span>When</span>
               </li>
               {recent.items.map((c) => (
-                <li key={c.id} className="item" style={{ gridTemplateColumns: "5.5rem minmax(0,1fr) 5rem" }}>
+                <li key={c.id} className="item cols-recent">
                   <ScoreMeter value={c.score} />
                   <div>
                     <Link href={`/commits/${c.id}`} className="title">
@@ -212,7 +212,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               <dt>Active authors</dt>
               <dd>{num(o.active_authors)}</dd>
             </dl>
-            <p className="muted" style={{ marginTop: 14, fontSize: 12.5, maxWidth: "46ch" }}>
+            <p className="muted" style={{ marginTop: 16, fontSize: 12.5, maxWidth: "46ch" }}>
               A commit starts at 100 and loses 15 for each critical, 7 for each major and 2 for each minor finding.
             </p>
           </div>
