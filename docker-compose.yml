@@ -61,6 +61,9 @@ services:
 
   frontend:
     build: ./frontend
+    env_file:
+      - path: .env
+        required: false
     environment:
       API_BASE_URL: http://backend-api:8080
       # must be one of the tokens in API_TOKENS
