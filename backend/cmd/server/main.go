@@ -13,8 +13,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+
 	"github.com/chakkapong1999/ai-assistance/backend/internal/config"
 	"github.com/chakkapong1999/ai-assistance/backend/internal/httpapi"
+	"github.com/chakkapong1999/ai-assistance/backend/internal/store"
 )
 
 func main() {
@@ -47,18 +51,32 @@ func main() {
 }
 
 func runAPI(ctx context.Context, log *slog.Logger, cfg config.Config) error {
+	pool, err := store.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if err := store.CheckSchema(ctx, pool); err != nil {
+		return err
+	}
+	// An insert-only River client: the API only enqueues; the worker runs jobs.
+	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(httpapi.Deps{WebhookSecret: []byte(cfg.BitbucketWebhookSecret)}),
+		Addr: cfg.HTTPAddr,
+		Handler: httpapi.NewRouter(httpapi.Deps{
+			WebhookSecret: []byte(cfg.BitbucketWebhookSecret),
+			Events:        store.NewEvents(pool, rc),
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
 	log.Info("api listening", "addr", cfg.HTTPAddr)
-	// The webhook route is registered once a Postgres-backed httpapi.EventStore
-	// is passed in Deps (needs pgx and River); until then only /healthz exists.
-	log.Warn("webhook route disabled: no event store wired yet")
 
 	select {
 	case err := <-errc:
