@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { ago, dateTime, one } from "@/lib/format";
 import Score from "@/components/Score";
+import Pager, { paging } from "@/components/Pager";
 import Segments from "@/components/Segments";
 import { DiffStat, FixMark, PRStateBadge, StatusBadge } from "@/components/badges";
 
@@ -14,14 +16,14 @@ const keys = ["q", "state", "review_status", "repo_id", "author_id", "fix"] as c
 export default async function PullRequests({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const f = Object.fromEntries(keys.map((k) => [k, one(sp[k])])) as Record<(typeof keys)[number], string>;
-  const cursor = one(sp.cursor);
+  const { page, size } = paging(one(sp.page), one(sp.size));
 
-  const [[list, p1], [repos, p2]] = await Promise.all([guard(api.pullRequests({ ...f, cursor, limit: 50 })), guard(api.repositories({ limit: 200 }))]);
+  const [[list, p1], [repos, p2]] = await Promise.all([guard(api.pullRequests({ ...f, offset: (page - 1) * size, limit: size })), guard(api.repositories({ limit: 200 }))]);
   if (!list || !repos) return p1 ?? p2;
 
   const author = f.author_id ? (await guard(api.user(Number(f.author_id), 1)))[0] : null;
   const keep = Object.fromEntries(Object.entries(f).filter(([, v]) => v));
-  const nextHref = list.next_cursor ? `/pull-requests?${new URLSearchParams({ ...keep, cursor: list.next_cursor })}` : null;
+  if (list.items.length === 0 && page > 1 && list.total > 0) redirect(`/pull-requests?${new URLSearchParams({ ...keep, page: String(Math.ceil(list.total / size)), ...(size !== 50 ? { size: String(size) } : {}) })}`);
   const filtered = Object.keys(keep).length > 0;
 
   return (
@@ -32,6 +34,7 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
       <p className="intro">Each pull request is reviewed as one diff, and again whenever its branch gets a new commit.</p>
 
       <form className="toolbar" action="/pull-requests">
+        {size !== 50 ? <input type="hidden" name="size" value={size} /> : null}
         <Segments
           base="/pull-requests"
           param="state"
@@ -147,10 +150,7 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
           ))}
         </ul>
       )}
-      <div className="pager">
-        <span>{list.items.length} shown</span>
-        {nextHref ? <Link href={nextHref}>Older pull requests</Link> : <span>End of list</span>}
-      </div>
+      <Pager base="/pull-requests" keep={keep} page={page} size={size} total={list.total} noun="pull requests" />
     </>
   );
 }

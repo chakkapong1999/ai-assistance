@@ -243,11 +243,11 @@ export const api = {
   setReviewEnabled: (id: number, enabled: boolean) =>
     call<Repository>(`/repositories/${id}`, { method: "PATCH", body: JSON.stringify({ review_enabled: enabled }) }),
   commits: (p: Record<string, string | number | undefined>) =>
-    call<{ items: CommitSummary[]; next_cursor: string | null }>(`/commits${qs(p)}`),
+    call<{ items: CommitSummary[]; total: number; next_cursor: string | null }>(`/commits${qs(p)}`),
   commit: (id: number) => call<CommitDetail>(`/commits/${id}`),
   rereview: (id: number) => call<{ status: string }>(`/commits/${id}/rereview`, { method: "POST" }),
   pullRequests: (p: Record<string, string | number | undefined>) =>
-    call<{ items: PullRequestSummary[]; next_cursor: string | null }>(`/pull-requests${qs(p)}`),
+    call<{ items: PullRequestSummary[]; total: number; next_cursor: string | null }>(`/pull-requests${qs(p)}`),
   pullRequest: (id: number) => call<PullRequestDetail>(`/pull-requests/${id}`),
   rereviewPullRequest: (id: number) => call<{ status: string }>(`/pull-requests/${id}/rereview`, { method: "POST" }),
   users: (p: Record<string, string | number | undefined>) => call<Page<User>>(`/users${qs(p)}`),

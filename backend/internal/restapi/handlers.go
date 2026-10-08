@@ -17,6 +17,7 @@ import (
 const (
 	defaultLimit = 50
 	maxLimit     = 200
+	maxOffset    = 1000000
 	defaultDays  = 30
 	maxDays      = 365
 	maxQueryLen  = 200
@@ -209,6 +210,7 @@ var commitStatuses = map[string]bool{"pending": true, "running": true, "done": t
 
 type commitPage struct {
 	Items      []store.CommitSummary `json:"items"`
+	Total      int                   `json:"total"`
 	NextCursor *string               `json:"next_cursor"`
 }
 
@@ -257,12 +259,26 @@ func (s *server) listCommits(w http.ResponseWriter, r *http.Request, _ string) {
 		badRequest(w, paramError("fix must be one of open, ready, closed"))
 		return
 	}
-	items, next, err := s.data.Commits(r.Context(), f, r.URL.Query().Get("cursor"), limit)
+	if f.Offset, err = intParam(r, "offset", 0, 0, maxOffset); err != nil {
+		badRequest(w, err)
+		return
+	}
+	cursor := r.URL.Query().Get("cursor")
+	if cursor != "" && f.Offset > 0 {
+		badRequest(w, paramError("use either cursor or offset, not both"))
+		return
+	}
+	items, next, err := s.data.Commits(r.Context(), f, cursor, limit)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	out := commitPage{Items: items}
+	total, err := s.data.CountCommits(r.Context(), f)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out := commitPage{Items: items, Total: total}
 	if next != "" {
 		out.NextCursor = &next
 	}
@@ -300,6 +316,7 @@ func (s *server) rereview(w http.ResponseWriter, r *http.Request, _ string) {
 var prStates = map[string]bool{"OPEN": true, "MERGED": true, "DECLINED": true, "SUPERSEDED": true, "DELETED": true}
 
 type pullRequestPage struct {
+	Total      int                        `json:"total"`
 	Items      []store.PullRequestSummary `json:"items"`
 	NextCursor *string                    `json:"next_cursor"`
 }
@@ -340,12 +357,26 @@ func (s *server) listPullRequests(w http.ResponseWriter, r *http.Request, _ stri
 		badRequest(w, paramError("fix must be one of open, ready, closed"))
 		return
 	}
-	items, next, err := s.data.PullRequests(r.Context(), f, r.URL.Query().Get("cursor"), limit)
+	if f.Offset, err = intParam(r, "offset", 0, 0, maxOffset); err != nil {
+		badRequest(w, err)
+		return
+	}
+	cursor := r.URL.Query().Get("cursor")
+	if cursor != "" && f.Offset > 0 {
+		badRequest(w, paramError("use either cursor or offset, not both"))
+		return
+	}
+	items, next, err := s.data.PullRequests(r.Context(), f, cursor, limit)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	out := pullRequestPage{Items: items}
+	total, err := s.data.CountPullRequests(r.Context(), f)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out := pullRequestPage{Items: items, Total: total}
 	if next != "" {
 		out.NextCursor = &next
 	}
