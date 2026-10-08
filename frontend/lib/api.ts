@@ -82,6 +82,19 @@ export type Overview = {
   enabled_repositories: number;
   total_repositories: number;
   series: { day: string; commits: number; reviewed: number; avg_score: number | null; cost_usd: number }[];
+  /** Fix workflow of the latest reviews of the commits in the window. */
+  fix: { open_findings: number; fixed_findings: number; reviews_ready_to_close: number; reviews_closed: number };
+};
+
+export type Health = {
+  status: "ok" | "degraded";
+  problems: string[];
+  checked_at: string;
+  webhooks: { unprocessed: number; oldest_age_seconds: number | null };
+  jobs: { waiting: number; running: number; retrying: number; snoozed: number; discarded_24h: number; oldest_waiting_seconds: number | null };
+  stuck: { commits: number; pull_requests: number };
+  last_poll: { at: string; ok: boolean } | null;
+  last_reconcile: { at: string; events: number; commits: number; pull_requests: number; gave_up: number } | null;
 };
 
 export type Repository = {
@@ -118,6 +131,9 @@ export type CommitSummary = {
   score: number | null;
   findings: number;
   reviewed_at: string | null;
+  /** Findings of the latest review the author still has to fix. */
+  open_findings: number;
+  review_closed: boolean;
 };
 
 export type Finding = {
@@ -185,6 +201,8 @@ export type PullRequestSummary = {
   reviewed_at: string | null;
   review_outdated: boolean;
   updated_at: string;
+  open_findings: number;
+  review_closed: boolean;
 };
 
 export type PullRequestDetail = PullRequestSummary & {
@@ -219,6 +237,7 @@ export const api = {
   findingReopen: (id: number, note: string) => call<{ status: string }>(`/findings/${id}/reopen`, { method: "POST", body: JSON.stringify({ note }) }),
   findingDismiss: (id: number, note: string) => call<{ status: string }>(`/findings/${id}/dismiss`, { method: "POST", body: JSON.stringify({ note }) }),
   closeReview: (id: number, note: string) => call<{ status: string }>(`/reviews/${id}/close`, { method: "POST", body: JSON.stringify({ note }) }),
+  health: () => call<Health>("/health"),
   overview: (days: number) => call<Overview>(`/overview${qs({ days })}`),
   repositories: (p: Record<string, string | number | undefined> = {}) => call<Page<Repository>>(`/repositories${qs(p)}`),
   setReviewEnabled: (id: number, enabled: boolean) =>

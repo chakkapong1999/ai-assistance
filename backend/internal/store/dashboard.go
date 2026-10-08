@@ -42,7 +42,7 @@ func NewDashboard(pool *pgxpool.Pool, rc *river.Client[pgx.Tx]) *Dashboard {
 // commit" means the same thing everywhere.
 const latestReview = `
 	LEFT JOIN LATERAL (
-		SELECT r.id, r.score, r.created_at
+		SELECT r.id, r.score, r.created_at, r.closed_at
 		FROM reviews r WHERE r.commit_id = c.id
 		ORDER BY r.created_at DESC, r.id DESC LIMIT 1
 	) lr ON true`
@@ -110,6 +110,15 @@ type Overview struct {
 	ActiveAuthors int            `json:"active_authors"`
 	EnabledRepos  int            `json:"enabled_repositories"`
 	TotalRepos    int            `json:"total_repositories"`
+	// Fix is the state of the latest reviews of the commits in the window.
+	Fix FixOverview `json:"fix"`
+}
+
+type FixOverview struct {
+	OpenFindings  int `json:"open_findings"`          // waiting for the author
+	FixedFindings int `json:"fixed_findings"`         // fixed, waiting for a reviewer, review not closed
+	ReadyToClose  int `json:"reviews_ready_to_close"` // findings all fixed or dismissed, not closed yet
+	ClosedReviews int `json:"reviews_closed"`
 }
 
 // Overview summarises the last `days` UTC days (today included).
@@ -148,6 +157,21 @@ func (d *Dashboard) Overview(ctx context.Context, days int) (Overview, error) {
 		FROM commits c `+latestReview+` WHERE c.committed_at >= $1`, since).
 		Scan(&o.Reviewed, &o.AvgScore, &o.ActiveRepos, &o.ActiveAuthors); err != nil {
 		return o, fmt.Errorf("review stats: %w", err)
+	}
+
+	if err := d.pool.QueryRow(ctx, `
+		SELECT COALESCE(sum(fc.open), 0)::int,
+		       COALESCE(sum(fc.fixed) FILTER (WHERE lr.closed_at IS NULL), 0)::int,
+		       count(*) FILTER (WHERE lr.closed_at IS NULL AND fc.n > 0 AND fc.open = 0)::int,
+		       count(*) FILTER (WHERE lr.closed_at IS NOT NULL)::int
+		FROM commits c `+latestReview+`
+		JOIN LATERAL (SELECT count(*)::int AS n,
+		                     (count(*) FILTER (WHERE f.status = 'open'))::int AS open,
+		                     (count(*) FILTER (WHERE f.status = 'fixed'))::int AS fixed
+		              FROM review_findings f WHERE f.review_id = lr.id) fc ON true
+		WHERE c.committed_at >= $1`, since).
+		Scan(&o.Fix.OpenFindings, &o.Fix.FixedFindings, &o.Fix.ReadyToClose, &o.Fix.ClosedReviews); err != nil {
+		return o, fmt.Errorf("fix workflow: %w", err)
 	}
 
 	rows, err = d.pool.Query(ctx, `
@@ -369,6 +393,10 @@ type CommitSummary struct {
 	Score       *int       `json:"score"`
 	Findings    int        `json:"findings"`
 	ReviewedAt  *time.Time `json:"reviewed_at"`
+	// Fix workflow, of the latest review: findings the author still has to
+	// fix (open), and whether a reviewer closed it.
+	OpenFindings int  `json:"open_findings"`
+	Closed       bool `json:"review_closed"`
 }
 
 const commitCols = `
@@ -376,7 +404,7 @@ const commitCols = `
 	u.id, ` + authorName + `, u.avatar_url,
 	c.branch, c.committed_at, c.review_status, c.review_skip_reason,
 	c.files_changed, c.additions, c.deletions, c.is_merge,
-	lr.score, COALESCE(fc.n, 0), lr.created_at`
+	lr.score, COALESCE(fc.n, 0), lr.created_at, COALESCE(fc.open, 0), lr.closed_at IS NOT NULL`
 
 const commitFrom = `
 	FROM commits c
@@ -384,14 +412,14 @@ const commitFrom = `
 	JOIN projects p ON p.id = r.project_id
 	JOIN workspaces ws ON ws.id = p.workspace_id
 	LEFT JOIN users u ON u.id = c.author_user_id` + latestReview + `
-	LEFT JOIN LATERAL (SELECT count(*)::int AS n FROM review_findings f WHERE f.review_id = lr.id) fc ON true`
+	LEFT JOIN LATERAL (SELECT count(*)::int AS n, (count(*) FILTER (WHERE f.status = 'open'))::int AS open FROM review_findings f WHERE f.review_id = lr.id) fc ON true`
 
 func (c *CommitSummary) dests() []any {
 	return []any{&c.ID, &c.Hash, &c.Subject, &c.Repository.ID, &c.Repository.FullName,
 		&c.Author.ID, &c.Author.Name, &c.Author.AvatarURL,
 		&c.Branch, &c.CommittedAt, &c.Status, &c.SkipReason,
 		&c.Files, &c.Additions, &c.Deletions, &c.IsMerge,
-		&c.Score, &c.Findings, &c.ReviewedAt}
+		&c.Score, &c.Findings, &c.ReviewedAt, &c.OpenFindings, &c.Closed}
 }
 
 type CommitFilter struct {

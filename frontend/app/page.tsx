@@ -14,11 +14,12 @@ const plural = (n: number, word: string) => `${num(n)} ${n === 1 ? word : `${wor
 
 export default async function Overview({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const days = intParam((await searchParams).days, 30, 1, 365);
-  const [[o, problem], [failedCommits], [failedPRs], [recent]] = await Promise.all([
+  const [[o, problem], [failedCommits], [failedPRs], [recent], [health]] = await Promise.all([
     guard(api.overview(days)),
     guard(api.commits({ status: "failed", limit: 5 })),
     guard(api.pullRequests({ review_status: "failed", limit: 5 })),
     guard(api.commits({ status: "done", limit: 6 })),
+    guard(api.health()),
   ]);
   if (!o) return problem;
 
@@ -73,6 +74,43 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </p>
         )}
       </section>
+
+      {health && health.status === "degraded" ? (
+        <section className="banner bad" role="alert" aria-labelledby="pipe">
+          <strong id="pipe">The review pipeline needs a look</strong>
+          <ul className="problems">
+            {health.problems.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {o.fix.open_findings + o.fix.fixed_findings + o.fix.reviews_ready_to_close + o.fix.reviews_closed > 0 ? (
+        <section className="section" aria-labelledby="fixes">
+          <header>
+            <h2 id="fixes">Fixes</h2>
+            <p>The latest review of each commit in this window.</p>
+          </header>
+          <dl className="tally">
+            <div>
+              <dt>Waiting for the author</dt>
+              <dd>{num(o.fix.open_findings)}</dd>
+              <span>findings still open</span>
+            </div>
+            <div>
+              <dt>Waiting for a reviewer</dt>
+              <dd>{num(o.fix.reviews_ready_to_close)}</dd>
+              <span>reviews ready to close ({num(o.fix.fixed_findings)} fixed findings)</span>
+            </div>
+            <div>
+              <dt>Closed</dt>
+              <dd>{num(o.fix.reviews_closed)}</dd>
+              <span>reviews</span>
+            </div>
+          </dl>
+        </section>
+      ) : null}
 
       {failed > 0 || waiting > 0 || o.queue_waiting + o.queue_running > 0 ? (
         <section className="section" aria-labelledby="attn">
@@ -218,6 +256,16 @@ export default async function Overview({ searchParams }: { searchParams: Promise
               </dd>
               <dt>Active authors</dt>
               <dd>{num(o.active_authors)}</dd>
+              {health ? (
+                <>
+                  <dt>Pipeline</dt>
+                  <dd>{health.status === "ok" ? "Healthy" : "Needs a look"}</dd>
+                  <dt>Worker last checked</dt>
+                  <dd>{health.last_reconcile ? ago(health.last_reconcile.at) : "not yet"}</dd>
+                  <dt>Last poll</dt>
+                  <dd>{health.last_poll ? `${ago(health.last_poll.at)}${health.last_poll.ok ? "" : ", failed"}` : "polling is off"}</dd>
+                </>
+              ) : null}
             </dl>
             <p className="muted" style={{ marginTop: 16, fontSize: 12.5, maxWidth: "46ch" }}>
               A commit starts at 100 and loses 15 for each critical, 7 for each major and 2 for each minor finding. Scores of 90 and up show green, 70 to 89 amber, below 70 red.

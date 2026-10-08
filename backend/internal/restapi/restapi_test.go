@@ -844,6 +844,43 @@ func TestFixWorkflowOverHTTP(t *testing.T) {
 	fp := func(i int, action string) string { return fmt.Sprintf("/api/v1/findings/%d/%s", fids[i], action) }
 	rp := fmt.Sprintf("/api/v1/reviews/%d/close", rv)
 
+	type fixView struct {
+		Open   int  `json:"open_findings"`
+		Closed bool `json:"review_closed"`
+	}
+	listFix := func() (fixView, string) {
+		var l struct {
+			Items []struct {
+				Hash string `json:"hash"`
+				fixView
+			}
+		}
+		e.get(t, "/api/v1/commits?repo_id="+fmt.Sprint(e.ids["api"]), &l)
+		for _, c := range l.Items {
+			if strings.HasPrefix(c.Hash, "c1") {
+				return c.fixView, ""
+			}
+		}
+		return fixView{}, "c1 missing"
+	}
+	overviewFix := func() (o struct {
+		F struct {
+			Open   int `json:"open_findings"`
+			Fixed  int `json:"fixed_findings"`
+			Ready  int `json:"reviews_ready_to_close"`
+			Closed int `json:"reviews_closed"`
+		} `json:"fix"`
+	}) {
+		e.get(t, "/api/v1/overview?days=7", &o)
+		return
+	}
+	if f, msg := listFix(); msg != "" || f.Open != 3 || f.Closed {
+		t.Fatalf("list before = %+v %s", f, msg)
+	}
+	if o := overviewFix(); o.F.Open != 3 || o.F.Fixed != 0 || o.F.Ready != 0 || o.F.Closed != 0 {
+		t.Fatalf("overview before = %+v", o.F)
+	}
+
 	// Who am I?
 	var me struct {
 		Role string `json:"role"`
@@ -897,6 +934,10 @@ func TestFixWorkflowOverHTTP(t *testing.T) {
 		t.Errorf("fixing twice = %d, want 409", code)
 	}
 
+	if o := overviewFix(); o.F.Open != 1 || o.F.Fixed != 2 || o.F.Ready != 0 {
+		t.Errorf("overview with one open finding = %+v", o.F)
+	}
+
 	// Review: not own, not while open.
 	if code, body := e.post(t, rp, aliceLeadTok, nil); code != 403 || !strings.Contains(body, "your own work") {
 		t.Errorf("closing own review = %d %s", code, body)
@@ -916,8 +957,18 @@ func TestFixWorkflowOverHTTP(t *testing.T) {
 	if code, _ := e.post(t, fp(1, "fixed"), aliceTok, nil); code != 200 {
 		t.Fatal("author fixes again")
 	}
+	if o := overviewFix(); o.F.Open != 0 || o.F.Fixed != 2 || o.F.Ready != 1 || o.F.Closed != 0 {
+		t.Errorf("overview ready to close = %+v", o.F)
+	}
 	if code, body := e.post(t, rp, samTok, map[string]string{"note": "ok"}); code != 200 {
 		t.Fatalf("close = %d %s", code, body)
+	}
+
+	if f, _ := listFix(); f.Open != 0 || !f.Closed {
+		t.Errorf("list after = %+v", f)
+	}
+	if o := overviewFix(); o.F.Open != 0 || o.F.Fixed != 0 || o.F.Ready != 0 || o.F.Closed != 1 {
+		t.Errorf("overview after = %+v", o.F)
 	}
 
 	// The detail shows all of it.

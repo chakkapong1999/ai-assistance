@@ -36,6 +36,9 @@ type PullRequestSummary struct {
 	// request has now (a push is waiting to be reviewed).
 	Stale     bool      `json:"review_outdated"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Fix workflow, of the latest review (see CommitSummary).
+	OpenFindings int  `json:"open_findings"`
+	Closed       bool `json:"review_closed"`
 }
 
 const prSortAt = `COALESCE(pr.bb_updated_on, pr.created_at)`
@@ -49,7 +52,8 @@ const prCols = `
 	pr.files_changed, pr.additions, pr.deletions,
 	lr.score, COALESCE(fc.n, 0), lr.created_at,
 	(lr.id IS NOT NULL AND lr.pr_head_hash IS DISTINCT FROM NULLIF(pr.source_hash, '')),
-	` + prSortAt
+	` + prSortAt + `,
+	COALESCE(fc.open, 0), lr.closed_at IS NOT NULL`
 
 const prFrom = `
 	FROM pull_requests pr
@@ -58,18 +62,18 @@ const prFrom = `
 	JOIN workspaces ws ON ws.id = p.workspace_id
 	LEFT JOIN users u ON u.id = pr.author_user_id
 	LEFT JOIN LATERAL (
-		SELECT rv.id, rv.score, rv.created_at, rv.pr_head_hash
+		SELECT rv.id, rv.score, rv.created_at, rv.pr_head_hash, rv.closed_at
 		FROM reviews rv WHERE rv.pr_id = pr.id
 		ORDER BY rv.created_at DESC, rv.id DESC LIMIT 1
 	) lr ON true
-	LEFT JOIN LATERAL (SELECT count(*)::int AS n FROM review_findings f WHERE f.review_id = lr.id) fc ON true`
+	LEFT JOIN LATERAL (SELECT count(*)::int AS n, (count(*) FILTER (WHERE f.status = 'open'))::int AS open FROM review_findings f WHERE f.review_id = lr.id) fc ON true`
 
 func (p *PullRequestSummary) dests() []any {
 	return []any{&p.ID, &p.Number, &p.Title, &p.Repository.ID, &p.Repository.FullName,
 		&p.Author.ID, &p.Author.Name, &p.Author.AvatarURL,
 		&p.SourceBr, &p.DestBr, &p.State, &p.Status, &p.SkipReason,
 		&p.Files, &p.Additions, &p.Deletions,
-		&p.Score, &p.Findings, &p.ReviewedAt, &p.Stale, &p.UpdatedAt}
+		&p.Score, &p.Findings, &p.ReviewedAt, &p.Stale, &p.UpdatedAt, &p.OpenFindings, &p.Closed}
 }
 
 type PullRequestFilter struct {

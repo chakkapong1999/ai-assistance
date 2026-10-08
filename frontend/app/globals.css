@@ -388,3 +388,12 @@ textarea:focus-visible, input:focus-visible { outline: 2px solid var(--info); ou
 .noteform button { justify-self: start; }
 .outline .fix { margin-left: 6px; padding: 0 6px; font-size: 11.5px; }
 .who { display: flex; align-items: center; gap: 8px; }
+
+.problems { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+.banner.bad { margin-top: 0; }
+.tally { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 0; }
+.tally > div { border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); padding: 14px 18px; display: grid; gap: 2px; }
+.tally dt { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.tally dd { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.tally span { font-size: 13px; color: var(--text-3); }
+.mark.info { --c: var(--info); }

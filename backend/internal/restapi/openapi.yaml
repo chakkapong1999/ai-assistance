@@ -391,6 +391,14 @@ components:
         active_authors: { type: integer }
         enabled_repositories: { type: integer }
         total_repositories: { type: integer }
+        fix:
+          type: object
+          description: Fix workflow of the latest reviews of the commits in the window
+          properties:
+            open_findings: { type: integer, description: Waiting for the author }
+            fixed_findings: { type: integer, description: Fixed by the author, review not closed yet }
+            reviews_ready_to_close: { type: integer, description: Every finding fixed or dismissed, waiting for a senior, lead or admin }
+            reviews_closed: { type: integer }
         series:
           type: array
           items:
@@ -452,6 +460,8 @@ components:
         score: { type: integer, nullable: true, minimum: 0, maximum: 100 }
         findings: { type: integer }
         reviewed_at: { type: string, format: date-time, nullable: true }
+        open_findings: { type: integer, description: Findings of the latest review that are still open (the author has to fix them) }
+        review_closed: { type: boolean, description: A senior, lead or admin closed the latest review }
     PullRequestState:
       type: string
       enum: [OPEN, MERGED, DECLINED, SUPERSEDED, DELETED]
@@ -482,6 +492,8 @@ components:
         score: { type: integer, nullable: true, minimum: 0, maximum: 100 }
         findings: { type: integer }
         reviewed_at: { type: string, format: date-time, nullable: true }
+        open_findings: { type: integer, description: Findings of the latest review that are still open (the author has to fix them) }
+        review_closed: { type: boolean, description: A senior, lead or admin closed the latest review }
         review_outdated: { type: boolean, description: The branch has new commits since the latest review }
         updated_at: { type: string, format: date-time }
     PullRequestPage:

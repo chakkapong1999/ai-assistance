@@ -4,7 +4,7 @@ import { guard } from "@/lib/guard";
 import { ago, dateTime, one } from "@/lib/format";
 import Score from "@/components/Score";
 import Segments from "@/components/Segments";
-import { DiffStat, StatusBadge } from "@/components/badges";
+import { DiffStat, FixMark, StatusBadge } from "@/components/badges";
 
 export const metadata = { title: "Commits" };
 
@@ -115,7 +115,10 @@ export default async function Commits({ searchParams }: { searchParams: Promise<
                 {c.review_status === "skipped" && c.review_skip_reason ? <div className="muted" style={{ fontSize: ".8rem" }}>{c.review_skip_reason}</div> : null}
               </div>
               <div className="side r">
-                {c.score === null ? <DiffStat files={c.files_changed} additions={c.additions} deletions={c.deletions} /> : `${c.findings} ${c.findings === 1 ? "finding" : "findings"}`}
+                {c.score === null ? <DiffStat files={c.files_changed} additions={c.additions} deletions={c.deletions} /> : <>
+                  {c.findings} {c.findings === 1 ? "finding" : "findings"}
+                  <div><FixMark findings={c.findings} open={c.open_findings} closed={c.review_closed} /></div>
+                </>}
               </div>
               <time className="r" title={dateTime(c.committed_at)} dateTime={c.committed_at}>
                 {ago(c.committed_at)}
