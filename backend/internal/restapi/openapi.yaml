@@ -118,6 +118,7 @@ paths:
         - { name: repo_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: author_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: status, in: query, schema: { $ref: "#/components/schemas/ReviewStatus" } }
+        - { name: fix, in: query, description: "Fix workflow of the latest review: open = findings left to fix, ready = all fixed and waiting for a reviewer, closed", schema: { type: string, enum: [open, ready, closed] } }
         - { name: branch, in: query, schema: { type: string, maxLength: 200 }, description: Exact branch name }
         - { name: q, in: query, schema: { type: string, maxLength: 200 }, description: Case-insensitive match on message or hash }
         - { name: since, in: query, schema: { type: string, format: date-time }, description: committed_at >= since }
@@ -264,6 +265,7 @@ paths:
         - { name: author_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: state, in: query, schema: { $ref: "#/components/schemas/PullRequestState" } }
         - { name: review_status, in: query, schema: { $ref: "#/components/schemas/ReviewStatus" } }
+        - { name: fix, in: query, description: "Fix workflow of the latest review: open = findings left to fix, ready = all fixed and waiting for a reviewer, closed", schema: { type: string, enum: [open, ready, closed] } }
         - { name: q, in: query, schema: { type: string, maxLength: 200 }, description: Case-insensitive match on title, source branch or number }
         - { name: cursor, in: query, schema: { type: string } }
         - { $ref: "#/components/parameters/limit" }

@@ -72,6 +72,9 @@ export default function TopBar({ me }: { me: Me | null }) {
           );
         })}
       </nav>
+      <form className="find" action="/search" role="search">
+        <input type="search" name="q" placeholder="Search everything" aria-label="Search commits, pull requests, repositories and people" maxLength={200} required />
+      </form>
       <div className="who">
         <p className={`role${role ? "" : " off"}`} title={hint}>
           {me?.user ? <b>{me.user.name}</b> : null}

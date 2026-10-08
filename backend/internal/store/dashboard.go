@@ -430,6 +430,27 @@ type CommitFilter struct {
 	Q        string
 	Since    *time.Time
 	Until    *time.Time
+	Fix      string // open | ready | closed, see fixCond
+}
+
+// ValidFix reports whether s is a fix filter value ("" means no filter).
+func ValidFix(s string) bool {
+	return s == "" || s == "open" || s == "ready" || s == "closed"
+}
+
+// fixCond narrows by the fix workflow state of the latest review: open has
+// findings still to fix, ready has none left and waits for a reviewer, closed
+// was closed by a reviewer. Needs the lr and fc joins.
+func fixCond(fix string) string {
+	switch fix {
+	case "open":
+		return "(lr.id IS NOT NULL AND lr.closed_at IS NULL AND COALESCE(fc.open, 0) > 0)"
+	case "ready":
+		return "(lr.id IS NOT NULL AND lr.closed_at IS NULL AND COALESCE(fc.open, 0) = 0)"
+	case "closed":
+		return "lr.closed_at IS NOT NULL"
+	}
+	return ""
 }
 
 func encodeCursor(t time.Time, id int64) string {
@@ -479,6 +500,9 @@ func (d *Dashboard) Commits(ctx context.Context, f CommitFilter, cursor string, 
 	}
 	if f.Until != nil {
 		conds = append(conds, "c.committed_at < "+a.add(*f.Until))
+	}
+	if c := fixCond(f.Fix); c != "" {
+		conds = append(conds, c)
 	}
 	if cursor != "" {
 		t, id, err := decodeCursor(cursor)

@@ -35,6 +35,13 @@ function Path({ path }: { path: string }) {
   );
 }
 
+export type FindingFilter = { q: string; status: string; severity: string };
+
+const matches = (f: Finding, x: FindingFilter) =>
+  (!x.status || f.status === x.status) &&
+  (!x.severity || f.severity === x.severity) &&
+  (!x.q || [f.title, f.explanation, f.file_path, f.category].some((t) => t.toLowerCase().includes(x.q.toLowerCase())));
+
 const REVIEWERS = ["senior", "lead", "admin"];
 
 function Note({ id, back, anchor, action, label, required, placeholder, primary }: {
@@ -105,6 +112,8 @@ export default function ReviewPanel({
   me,
   authorId,
   back,
+  filter,
+  path,
 }: {
   review: Review;
   reviewsCount: number;
@@ -114,11 +123,26 @@ export default function ReviewPanel({
   authorId: number | null;
   /** Page to return to after an action. */
   back: string;
+  /** Narrows the findings shown; the page reads it from the address. */
+  filter: FindingFilter;
+  /** This page's path, where the filter form sends its search. */
+  path: string;
   layout: "unified" | "split";
   /** Link to this page with the given diff layout. */
   hrefFor: (layout: "unified" | "split") => string;
 }) {
-  const groups = byFile(r.findings);
+  const shown = r.findings.filter((f) => matches(f, filter));
+  const groups = byFile(shown);
+  const filtered = !!(filter.q || filter.status || filter.severity);
+  const withFilter = (href: string) => {
+    const [base, query = ""] = href.split("?");
+    const p = new URLSearchParams(query);
+    if (filter.q) p.set("fq", filter.q);
+    if (filter.status) p.set("fs", filter.status);
+    if (filter.severity) p.set("fsev", filter.severity);
+    const out = p.toString();
+    return out ? `${base}?${out}` : base;
+  };
   const uid = me?.user?.id ?? null;
   const isAuthor = uid !== null && uid === authorId;
   const isAdmin = me?.role === "admin"; // an admin needs no user: it may fix, send back, dismiss and close
@@ -200,7 +224,7 @@ export default function ReviewPanel({
           <div>
             <div className="viewtoggle">
               <h2>
-                {r.findings.length} {r.findings.length === 1 ? "finding" : "findings"} in {groups.length} {groups.length === 1 ? "file" : "files"}
+                {filtered ? `${shown.length} of ${r.findings.length}` : r.findings.length} {r.findings.length === 1 ? "finding" : "findings"} in {groups.length} {groups.length === 1 ? "file" : "files"}
               </h2>
               <div className="seg" role="group" aria-label="Code layout">
                 {(["unified", "split"] as const).map((l) =>
@@ -209,13 +233,48 @@ export default function ReviewPanel({
                       {l === "unified" ? "Unified" : "Split"}
                     </span>
                   ) : (
-                    <Link key={l} href={hrefFor(l)} scroll={false}>
+                    <Link key={l} href={withFilter(hrefFor(l))} scroll={false}>
                       {l === "unified" ? "Unified" : "Split"}
                     </Link>
                   ),
                 )}
               </div>
             </div>
+            <form className="toolbar findfilter" action={path} role="search" aria-label="Filter findings">
+              {layout === "split" ? <input type="hidden" name="view" value="split" /> : null}
+              <label>
+                Search
+                <input type="search" name="fq" defaultValue={filter.q} placeholder="Title, file or text" />
+              </label>
+              <label>
+                Severity
+                <select name="fsev" defaultValue={filter.severity}>
+                  <option value="">Any</option>
+                  {order.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Fix
+                <select name="fs" defaultValue={filter.status}>
+                  <option value="">Any</option>
+                  <option value="open">Open</option>
+                  <option value="fixed">Fixed</option>
+                  <option value="dismissed">Dismissed</option>
+                </select>
+              </label>
+              <button className="primary">Filter</button>
+              {filtered ? <Link href={layout === "split" ? `${path}?view=split` : path}>Clear filters</Link> : null}
+            </form>
+            {shown.length === 0 ? (
+              <div className="empty">
+                <strong>No findings match these filters</strong>
+                Clear a filter to see all {r.findings.length}.
+              </div>
+            ) : null}
             {groups.map((g) => (
               <section key={g.path} className="file">
                 <h3>

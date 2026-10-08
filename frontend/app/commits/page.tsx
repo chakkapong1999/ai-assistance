@@ -9,7 +9,7 @@ import { DiffStat, FixMark, StatusBadge } from "@/components/badges";
 export const metadata = { title: "Commits" };
 
 type SP = Record<string, string | string[] | undefined>;
-const keys = ["q", "status", "repo_id", "author_id", "branch"] as const;
+const keys = ["q", "status", "repo_id", "author_id", "branch", "fix"] as const;
 
 export default async function Commits({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
@@ -66,6 +66,15 @@ export default async function Commits({ searchParams }: { searchParams: Promise<
         <label>
           Branch
           <input type="text" name="branch" defaultValue={f.branch} placeholder="Exact name" />
+        </label>
+        <label>
+          Fix
+          <select name="fix" defaultValue={f.fix}>
+            <option value="">Any</option>
+            <option value="open">Findings to fix</option>
+            <option value="ready">Ready to close</option>
+            <option value="closed">Closed</option>
+          </select>
         </label>
         <button className="primary">Apply</button>
         {filtered ? <Link href="/commits">Clear filters</Link> : null}

@@ -9,7 +9,7 @@ import { DiffStat, FixMark, PRStateBadge, StatusBadge } from "@/components/badge
 export const metadata = { title: "Pull requests" };
 
 type SP = Record<string, string | string[] | undefined>;
-const keys = ["q", "state", "review_status", "repo_id", "author_id"] as const;
+const keys = ["q", "state", "review_status", "repo_id", "author_id", "fix"] as const;
 
 export default async function PullRequests({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
@@ -71,6 +71,15 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
             <option value="pending">Waiting</option>
             <option value="running">Reviewing</option>
             <option value="skipped">Skipped</option>
+          </select>
+        </label>
+        <label>
+          Fix
+          <select name="fix" defaultValue={f.fix}>
+            <option value="">Any</option>
+            <option value="open">Findings to fix</option>
+            <option value="ready">Ready to close</option>
+            <option value="closed">Closed</option>
           </select>
         </label>
         <button className="primary">Apply</button>
