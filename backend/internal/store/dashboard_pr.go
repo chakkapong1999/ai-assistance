@@ -82,6 +82,7 @@ type PullRequestFilter struct {
 	State    string // OPEN, MERGED, DECLINED, SUPERSEDED, DELETED
 	Status   string // review status
 	Q        string
+	Fix      string // open | ready | closed
 }
 
 // PullRequests lists most recently updated first, with keyset pagination.
@@ -103,6 +104,9 @@ func (d *Dashboard) PullRequests(ctx context.Context, f PullRequestFilter, curso
 	if f.Q != "" {
 		p := a.add(likePattern(f.Q))
 		conds = append(conds, "(pr.title ILIKE "+p+" OR pr.source_branch ILIKE "+p+" OR pr.bb_pr_id::text ILIKE "+p+")")
+	}
+	if c := fixCond(f.Fix); c != "" {
+		conds = append(conds, c)
 	}
 	if cursor != "" {
 		t, id, err := decodeCursor(cursor)

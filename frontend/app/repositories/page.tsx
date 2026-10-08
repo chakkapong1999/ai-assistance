@@ -2,6 +2,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { ago, num, one } from "@/lib/format";
+import Segments from "@/components/Segments";
 import Score from "@/components/Score";
 import { Parts } from "@/components/badges";
 import { toggleReview } from "./actions";
@@ -12,7 +13,9 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const q = one(sp.q);
   const notice = one(sp.notice);
-  const [[list, problem], [me]] = await Promise.all([guard(api.repositories({ q, limit: 200 })), guard(api.me())]);
+  const on = one(sp.review_enabled);
+  const keep = Object.fromEntries(Object.entries({ q, review_enabled: on }).filter(([, v]) => v)) as Record<string, string>;
+  const [[list, problem], [me]] = await Promise.all([guard(api.repositories({ q, review_enabled: on, limit: 200 })), guard(api.me())]);
   if (!list) return problem;
   const admin = me?.role === "admin";
   const enabled = list.items.filter((r) => r.review_enabled).length;
@@ -32,18 +35,31 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
         </p>
       ) : null}
       <form className="toolbar" action="/repositories">
+        <Segments
+          base="/repositories"
+          param="review_enabled"
+          current={on}
+          keep={keep}
+          label="Review on or off"
+          options={[
+            ["", "All"],
+            ["true", "Review on"],
+            ["false", "Review off"],
+          ]}
+        />
+        {on ? <input type="hidden" name="review_enabled" value={on} /> : null}
         <label>
           Search
           <input type="search" name="q" defaultValue={q} placeholder="workspace/repo" />
         </label>
         <button className="primary">Search</button>
-        {q ? <Link href="/repositories">Clear search</Link> : null}
+        {q || on ? <Link href="/repositories">Clear filters</Link> : null}
       </form>
 
       {list.items.length === 0 ? (
         <div className="empty">
-          <strong>{q ? "No repository matches" : "No repositories yet"}</strong>
-          {q ? "Try a shorter search." : "Repositories are created when Bitbucket first sends a push or the poller finds them."}
+          <strong>{q || on ? "No repository matches" : "No repositories yet"}</strong>
+          {q || on ? "Clear a filter to see more." : "Repositories are created when Bitbucket first sends a push or the poller finds them."}
         </div>
       ) : (
         <ul className="rows">

@@ -173,3 +173,10 @@ Besides each commit, the worker reviews every **open pull request as one diff** 
 - Requires migration 0003 (`make migrate`); the API and worker refuse to start without it. The access token also needs **Pull requests: Read** (Bitbucket scope `pullrequest`); without it the pull request step fails for each repository (logged) while commit polling keeps working. Not verified against real Bitbucket: the response shapes follow the public API docs and the mock.
 
 - Try it without Bitbucket: with the mock above, `curl -X POST 'localhost:7990/_mock/pullrequest?repo=acme/demo&source=feature/x&title=Add+x'` (the branch needs a commit first), push more commits to the branch, and `...&id=1&state=MERGED` to merge it.
+
+## Search and filters
+
+- The search box in the top bar opens `/search`: the first five commits, pull requests, repositories and people that match, each with a link to the full filtered list.
+- Commits and pull requests can be filtered by fix state (`fix=open|ready|closed` in the API): findings left to fix, all fixed and waiting for a reviewer, or closed.
+- Repositories can be filtered to review on or off.
+- On a commit or pull request, the findings can be filtered by text, severity and fix status (`fq`, `fsev`, `fs` in the page address).

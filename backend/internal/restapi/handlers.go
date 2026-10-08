@@ -253,6 +253,10 @@ func (s *server) listCommits(w http.ResponseWriter, r *http.Request, _ string) {
 		badRequest(w, err)
 		return
 	}
+	if f.Fix = r.URL.Query().Get("fix"); !store.ValidFix(f.Fix) {
+		badRequest(w, paramError("fix must be one of open, ready, closed"))
+		return
+	}
 	items, next, err := s.data.Commits(r.Context(), f, r.URL.Query().Get("cursor"), limit)
 	if err != nil {
 		s.fail(w, r, err)
@@ -330,6 +334,10 @@ func (s *server) listPullRequests(w http.ResponseWriter, r *http.Request, _ stri
 	}
 	if f.Q, err = textParam(r, "q"); err != nil {
 		badRequest(w, err)
+		return
+	}
+	if f.Fix = r.URL.Query().Get("fix"); !store.ValidFix(f.Fix) {
+		badRequest(w, paramError("fix must be one of open, ready, closed"))
 		return
 	}
 	items, next, err := s.data.PullRequests(r.Context(), f, r.URL.Query().Get("cursor"), limit)

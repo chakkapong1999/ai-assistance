@@ -880,6 +880,20 @@ func TestFixWorkflowOverHTTP(t *testing.T) {
 	if o := overviewFix(); o.F.Open != 3 || o.F.Fixed != 0 || o.F.Ready != 0 || o.F.Closed != 0 {
 		t.Fatalf("overview before = %+v", o.F)
 	}
+	hasC1 := func(fix string) bool {
+		var l commitList
+		e.get(t, "/api/v1/commits?fix="+fix, &l)
+		return strings.Contains(hashes(l), "c1")
+	}
+	if !hasC1("open") || hasC1("ready") || hasC1("closed") {
+		t.Fatalf("fix filter before: open=%v ready=%v closed=%v", hasC1("open"), hasC1("ready"), hasC1("closed"))
+	}
+	if code, _ := e.do(t, "GET", "/api/v1/commits?fix=bogus", viewerTok, nil); code != 400 {
+		t.Fatalf("fix=bogus = %d", code)
+	}
+	if code, _ := e.do(t, "GET", "/api/v1/pull-requests?fix=bogus", viewerTok, nil); code != 400 {
+		t.Fatalf("pr fix=bogus = %d", code)
+	}
 
 	// Who am I?
 	var me struct {
