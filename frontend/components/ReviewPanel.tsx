@@ -1,6 +1,7 @@
 import Link from "next/link";
-import type { CommitDetail, Finding, Severity } from "@/lib/api";
+import type { CommitDetail, Finding, Me, Severity } from "@/lib/api";
 import { dateTime, num, usd } from "@/lib/format";
+import { closeReview, dismiss, markFixed, sendBack } from "@/app/workflow/actions";
 import CopyButton from "./CopyButton";
 import DiffView from "./DiffView";
 import Score from "./Score";
@@ -34,19 +35,97 @@ function Path({ path }: { path: string }) {
   );
 }
 
+const REVIEWERS = ["senior", "lead", "admin"];
+
+function Note({ id, back, anchor, action, label, required, placeholder, primary }: {
+  id: number;
+  back: string;
+  anchor?: string;
+  action: (f: FormData) => Promise<void>;
+  label: string;
+  required?: boolean;
+  placeholder: string;
+  primary?: boolean;
+}) {
+  return (
+    <details className="noteform">
+      <summary>{label}</summary>
+      <form action={action}>
+        <input type="hidden" name="id" value={id} />
+        <input type="hidden" name="back" value={back} />
+        {anchor ? <input type="hidden" name="anchor" value={anchor} /> : null}
+        <label>
+          {required ? "Note (required)" : "Note (optional)"}
+          <textarea name="note" rows={3} maxLength={2000} required={required} placeholder={placeholder} />
+        </label>
+        <button className={primary ? "primary" : undefined}>{label}</button>
+      </form>
+    </details>
+  );
+}
+
+const when = (s: string | null) => (s ? dateTime(s) : "");
+
+function FindingState({ f }: { f: Finding }) {
+  if (f.status === "open" && f.history.length === 0) return null;
+  return (
+    <div className="fixstate">
+      <p>
+        <span className={`fix fix-${f.status}`}>{f.status === "open" ? "Open again" : f.status === "fixed" ? "Marked as fixed" : "Dismissed"}</span>
+        {f.status_by ? (
+          <span className="muted">
+            {" "}
+            by {f.status_by.name} · {when(f.status_at)}
+          </span>
+        ) : null}
+      </p>
+      {f.status_note ? <p className="note">{f.status_note}</p> : null}
+      {f.history.length > 1 ? (
+        <details>
+          <summary>History ({f.history.length})</summary>
+          <ol>
+            {f.history.map((h, i) => (
+              <li key={i}>
+                <b>{h.action === "fixed" ? "Fixed" : h.action === "reopened" ? "Sent back" : "Dismissed"}</b> by {h.by?.name ?? "an admin"} · {when(h.at)}
+                {h.note ? <span className="note"> {h.note}</span> : null}
+              </li>
+            ))}
+          </ol>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ReviewPanel({
   review: r,
   reviewsCount,
   layout,
   hrefFor,
+  me,
+  authorId,
+  back,
 }: {
   review: Review;
   reviewsCount: number;
+  /** Who is looking; null when the API did not answer. */
+  me: Me | null;
+  /** The linked author of the commit or pull request, if any. */
+  authorId: number | null;
+  /** Page to return to after an action. */
+  back: string;
   layout: "unified" | "split";
   /** Link to this page with the given diff layout. */
   hrefFor: (layout: "unified" | "split") => string;
 }) {
   const groups = byFile(r.findings);
+  const uid = me?.user?.id ?? null;
+  const isAuthor = uid !== null && uid === authorId;
+  const isAdmin = me?.role === "admin"; // an admin needs no user: it may fix, send back, dismiss and close
+  const reviewer = !!me && REVIEWERS.includes(me.role) && (uid !== null || isAdmin);
+  const canReview = reviewer && !isAuthor; // nobody reviews their own work
+  const closed = r.closed;
+  const open = r.findings.filter((f) => f.status === "open").length;
   const counts = order.map((s) => [s, r.findings.filter((f) => f.severity === s).length] as const).filter(([, n]) => n > 0);
 
   return (
@@ -69,6 +148,46 @@ export default function ReviewPanel({
             {reviewsCount > 1 ? <span>Latest of {reviewsCount} reviews</span> : null}
           </p>
         </div>
+      </section>
+
+      <section className="workflow" aria-label="Fix and review status">
+        {closed ? (
+          <p>
+            <span className="fix fix-closed">Review closed</span>{" "}
+            <span className="muted">
+              by {closed.by?.name ?? "an admin"} · {when(closed.at)}
+              {closed.note ? ` · ${closed.note}` : ""}
+            </span>
+          </p>
+        ) : r.findings.length === 0 ? (
+          <p className="muted">Nothing to fix.</p>
+        ) : (
+          <p>
+            <b>{open === 0 ? "Every finding is fixed or dismissed." : `${open} of ${r.findings.length} findings still open.`}</b>{" "}
+            <span className="muted">
+              {open > 0
+                ? isAuthor
+                  ? "Fix them, then mark each one as fixed."
+                  : isAdmin
+                    ? "The author marks each one as fixed, or you can."
+                  : "The author marks each one as fixed."
+                : canReview
+                  ? "Look at the fixes, then close the review."
+                  : "A senior, lead or admin closes the review."}
+            </span>
+          </p>
+        )}
+        {!closed && canReview ? (
+          open === 0 ? (
+            <Note id={r.id} back={back} action={closeReview} label="Close review" placeholder="Anything the author should know" primary />
+          ) : null
+        ) : null}
+        {reviewer && isAuthor && !closed ? <p className="muted">You wrote this, so someone else has to review it.</p> : null}
+        {!me?.user && !isAdmin ? (
+          <p className="muted">
+            <Link href={`/signin?next=${encodeURIComponent(back)}`}>Sign in</Link> with your personal token to take part.
+          </p>
+        ) : null}
       </section>
 
       {r.findings.length === 0 ? (
@@ -120,6 +239,20 @@ export default function ReviewPanel({
                       <p className="nocode">The surrounding code was not recorded for this older review.</p>
                     ) : null}
                     {f.explanation ? <p className="explain">{f.explanation}</p> : null}
+                    <FindingState f={f} />
+                    {!closed || canReview ? (
+                      <div className="fixactions">
+                        {!closed && f.status === "open" && (isAuthor || isAdmin || (authorId === null && canReview)) ? (
+                          <Note id={f.id} back={back} anchor={`f-${f.id}`} action={markFixed} label="Mark as fixed" placeholder="What did you change?" primary />
+                        ) : null}
+                        {canReview && f.status !== "open" ? (
+                          <Note id={f.id} back={back} anchor={`f-${f.id}`} action={sendBack} label="Send back" required placeholder="What is still wrong?" />
+                        ) : null}
+                        {!closed && canReview && f.status !== "dismissed" ? (
+                          <Note id={f.id} back={back} anchor={`f-${f.id}`} action={dismiss} label="Dismiss" required placeholder="Why is this not a problem?" />
+                        ) : null}
+                      </div>
+                    ) : null}
                     {f.suggestion ? (
                       <div className="suggest">
                         <header>
@@ -159,6 +292,7 @@ export default function ReviewPanel({
                           </span>
                           <span className="l">{f.line_start}</span>
                           <span>{f.title}</span>
+                          {f.status !== "open" ? <span className={`fix fix-${f.status}`}>{f.status === "fixed" ? "fixed" : "dismissed"}</span> : null}
                         </a>
                       </li>
                     ))}

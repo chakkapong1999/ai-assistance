@@ -48,3 +48,11 @@ export function Parts({ items, empty }: { items: (string | null | undefined | fa
   const xs = items.filter((x): x is string => !!x);
   return xs.length ? xs.map((x) => <span key={x}>{x}</span>) : <span>{empty}</span>;
 }
+
+/** Where the fix workflow stands for a commit or pull request; nothing to show without findings. */
+export function FixMark({ findings, open, closed }: { findings: number; open: number; closed: boolean }) {
+  if (findings === 0) return null;
+  if (closed) return <span className="mark good">Closed</span>;
+  if (open > 0) return <span className="mark warn">{open} to fix</span>;
+  return <span className="mark info">Ready to close</span>;
+}

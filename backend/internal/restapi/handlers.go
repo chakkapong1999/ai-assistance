@@ -1,7 +1,10 @@
 package restapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -73,8 +76,28 @@ func (s *server) openapi(w http.ResponseWriter, _ *http.Request, _ string) {
 	_, _ = w.Write(openapiSpec)
 }
 
-func (s *server) me(w http.ResponseWriter, _ *http.Request, role string) {
-	writeJSON(w, http.StatusOK, map[string]string{"role": role})
+type meResponse struct {
+	Role string `json:"role"`
+	User *struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	} `json:"user"`
+}
+
+func (s *server) me(w http.ResponseWriter, r *http.Request, role string) {
+	out := meResponse{Role: role}
+	if p := principalOf(r); p.UserID != 0 {
+		name, err := s.data.UserName(r.Context(), p.UserID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.fail(w, r, err)
+			return
+		}
+		out.User = &struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+		}{p.UserID, name}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *server) overview(w http.ResponseWriter, r *http.Request, _ string) {
@@ -403,4 +426,53 @@ func (s *server) getUser(w http.ResponseWriter, r *http.Request, role string) {
 		u.Email = nil
 	}
 	writeJSON(w, http.StatusOK, u)
+}
+
+// noteBody reads the optional {"note": "..."} of the workflow actions. An empty body is fine.
+func noteBody(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var body struct {
+		Note string `json:"note"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		badRequest(w, paramError(`body must be {"note": "..."} or empty`))
+		return "", false
+	}
+	return body.Note, true
+}
+
+// workflowAction runs one of the fix-workflow actions for the calling user.
+func (s *server) workflowAction(name string, run func(ctx context.Context, a store.Actor, id int64, note string) error) func(http.ResponseWriter, *http.Request, string) {
+	return func(w http.ResponseWriter, r *http.Request, _ string) {
+		id, ok := idParam(r, "id")
+		if !ok {
+			badID(w)
+			return
+		}
+		note, ok := noteBody(w, r)
+		if !ok {
+			return
+		}
+		p := principalOf(r)
+		if err := run(r.Context(), p.actor(), id, note); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		s.log.Info("review workflow", "action", name, "id", id, "user_id", p.UserID)
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+}
+
+func (s *server) findingFixed(w http.ResponseWriter, r *http.Request, role string) {
+	s.workflowAction("fixed", s.data.MarkFixed)(w, r, role)
+}
+func (s *server) findingReopen(w http.ResponseWriter, r *http.Request, role string) {
+	s.workflowAction("reopen", s.data.Reopen)(w, r, role)
+}
+func (s *server) findingDismiss(w http.ResponseWriter, r *http.Request, role string) {
+	s.workflowAction("dismiss", s.data.Dismiss)(w, r, role)
+}
+func (s *server) reviewClose(w http.ResponseWriter, r *http.Request, role string) {
+	s.workflowAction("close", s.data.CloseReview)(w, r, role)
 }

@@ -68,7 +68,7 @@ The dashboard reads everything through a JSON API served by `--mode=api`. The co
 `GET /api/v1/openapi.yaml`; a test fails if the spec and the routes drift apart.
 
 ```bash
-# token:role pairs; roles are viewer (read only) and admin (also toggle repositories, re-review a commit or pull request)
+# token:role[:user_id] pairs; roles: viewer (read only), author, senior, lead, admin (see "Fix workflow" below)
 API_TOKENS=$(openssl rand -hex 24):admin  go run ./cmd/server --mode=api   # from backend/
 curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/overview
 ```
@@ -76,7 +76,30 @@ curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/overview
 - **No `API_TOKENS` = no API.** The routes are not registered and the API logs a warning; it never falls back to open access.
 - Viewer tokens never see `users.email`; writes need an admin token.
 - `docker compose` reads settings from a `.env` in the repository root (`cp .env.example .env`); the api and worker containers get every variable in it. `DATABASE_URL` is always set by compose. `API_TOKENS` defaults to `dev-admin-token-change-me:admin` and the frontend gets the same value as `API_TOKEN`. Change both for anything but local use.
-- **This authenticates the dashboard server, not the people using it.** Anyone who can open the dashboard can do what its token can. End-user login (for example Bitbucket OAuth) is not built yet; until then keep the dashboard on a trusted network.
+- The shared `API_TOKEN` of the dashboard identifies the dashboard server only. People who need to act sign in with their own token (next section); real login (for example Bitbucket OAuth) is not built yet, so keep the dashboard on a trusted network.
+
+## Fix workflow: author fixes, senior closes (migration 0005)
+
+After the AI review, each finding goes through three steps:
+
+1. **Author:** marks a finding **fixed** (optional note on what changed). Only the author of that commit or pull request can.
+2. **Senior, lead or admin:** looks at the fix and either **sends it back** (note required; the finding is open again), **dismisses** it as not a real problem (note required), or leaves it fixed.
+3. Once no finding is open, a senior, lead or admin **closes the review**. Nobody can review their own work: a reviewer who authored the commit sees the review but cannot close it. Sending a finding back on a closed review reopens the review.
+
+Everything is recorded (who, when, note) and shown under each finding. A new automatic review of the same commit (Review again) starts fresh with all findings open.
+
+Who is who comes from the token: `API_TOKENS=token:role:user_id`, where `user_id` is the person's id on the *People* page (`/users/{id}`).
+
+```bash
+API_TOKENS='<random>:author:12,<random>:senior:7,<random>:lead:3,<random>:admin:1,<shared dashboard token>:viewer'
+```
+
+- `viewer` reads. `author` (needs a user id) marks own findings fixed. `senior` and `lead` (need a user id) review and close. `admin` can do all of it plus the settings, **with or without a user id**: an admin can mark a finding fixed on the author's behalf, send back, dismiss and close. An admin token without a user id is recorded without a name in the history and cannot be stopped from closing work it also wrote, so give admins their own `admin:USER_ID` token if you want that rule to hold for them.
+- Dashboard: **Sign in** (top right) with a personal token; it is kept in an httpOnly cookie for 14 days (`COOKIE_SECURE=true` marks it secure when you serve over HTTPS). Sign out removes it.
+- Where you see it: each finding and a bar above the findings on the commit/PR page; a "N to fix / Ready to close / Closed" mark in the commit and pull request lists (`open_findings`, `review_closed` in the API); a **Fixes** summary on the Overview (open findings, reviews ready to close, closed, for the commits in the window; `fix` in `GET /api/v1/overview`).
+- The Overview also shows the pipeline health from `GET /api/v1/health` (see "Health and self-repair"): a red box listing what is wrong, and the last worker check and last poll under *Cost and capacity*.
+- When Bitbucket OAuth arrives, only the sign-in step changes: the workflow already works on users and roles.
+- Run `make migrate` for migration 0005. Endpoints: `POST /api/v1/findings/{id}/fixed|reopen|dismiss`, `POST /api/v1/reviews/{id}/close`; `GET /api/v1/me` shows who the token is.
 
 ## Dashboard (`frontend/`)
 

@@ -74,9 +74,15 @@ type Config struct {
 	ClaudeBin          string
 }
 
-// Roles of an API token. viewer = read only; admin = may also change settings.
+// Roles of an API token, lowest first. viewer = read only; author = a developer
+// who marks their own findings as fixed; senior, lead and admin also review
+// other people's work and close reviews; admin may also change settings.
+// author, senior and lead tokens must name the user they belong to.
 const (
 	RoleViewer = "viewer"
+	RoleAuthor = "author"
+	RoleSenior = "senior"
+	RoleLead   = "lead"
 	RoleAdmin  = "admin"
 )
 
@@ -84,11 +90,21 @@ const (
 const MinTokenLen = 16
 
 type APIToken struct {
-	Token string
-	Role  string
+	Token  string
+	Role   string
+	UserID int64 // 0 = a token that is not linked to a person
 }
 
-// parseAPITokens parses "token:role,token:role". Errors never include the
+var roleRank = map[string]int{RoleViewer: 0, RoleAuthor: 1, RoleSenior: 2, RoleLead: 3, RoleAdmin: 4}
+
+// RoleAtLeast reports whether role is min or higher.
+func RoleAtLeast(role, min string) bool {
+	r, ok := roleRank[role]
+	m, ok2 := roleRank[min]
+	return ok && ok2 && r >= m
+}
+
+// parseAPITokens parses "token:role[:user_id],token:role[:user_id]". Errors never include the
 // token text, so a bad value does not end up in logs.
 func parseAPITokens(raw string) ([]APIToken, error) {
 	if strings.TrimSpace(raw) == "" {
@@ -98,23 +114,45 @@ func parseAPITokens(raw string) ([]APIToken, error) {
 	seen := map[string]bool{}
 	for i, part := range strings.Split(raw, ",") {
 		part = strings.TrimSpace(part)
-		idx := strings.LastIndex(part, ":")
-		if idx < 0 {
-			return nil, fmt.Errorf("API_TOKENS entry %d: want token:role", i+1)
-		}
-		tok, role := strings.TrimSpace(part[:idx]), strings.TrimSpace(part[idx+1:])
+		tok, role, uid, err := splitToken(part)
 		switch {
-		case role != RoleViewer && role != RoleAdmin:
-			return nil, fmt.Errorf("API_TOKENS entry %d: role must be viewer or admin", i+1)
+		case err != nil:
+			return nil, fmt.Errorf("API_TOKENS entry %d: %v", i+1, err)
+		case roleRank[role] == 0 && role != RoleViewer:
+			return nil, fmt.Errorf("API_TOKENS entry %d: role must be one of viewer, author, senior, lead, admin", i+1)
+		case (role == RoleAuthor || role == RoleSenior || role == RoleLead) && uid == 0:
+			return nil, fmt.Errorf("API_TOKENS entry %d: a %s token needs a user id (token:%s:USER_ID)", i+1, role, role)
 		case len(tok) < MinTokenLen:
 			return nil, fmt.Errorf("API_TOKENS entry %d: token must be at least %d characters", i+1, MinTokenLen)
 		case seen[tok]:
 			return nil, fmt.Errorf("API_TOKENS entry %d: duplicate token", i+1)
 		}
 		seen[tok] = true
-		out = append(out, APIToken{Token: tok, Role: role})
+		out = append(out, APIToken{Token: tok, Role: role, UserID: uid})
 	}
 	return out, nil
+}
+
+// splitToken separates "token:role" or "token:role:user_id". The token itself
+// may contain colons; the error never includes it.
+func splitToken(part string) (tok, role string, uid int64, err error) {
+	idx := strings.LastIndex(part, ":")
+	if idx < 0 {
+		return "", "", 0, errors.New("want token:role")
+	}
+	last := strings.TrimSpace(part[idx+1:])
+	rest := part[:idx]
+	if n, perr := strconv.ParseInt(last, 10, 64); perr == nil {
+		if n <= 0 {
+			return "", "", 0, errors.New("user id must be a positive number")
+		}
+		j := strings.LastIndex(rest, ":")
+		if j < 0 {
+			return "", "", 0, errors.New("want token:role:user_id")
+		}
+		return strings.TrimSpace(rest[:j]), strings.TrimSpace(rest[j+1:]), n, nil
+	}
+	return strings.TrimSpace(rest), last, 0, nil
 }
 
 const (

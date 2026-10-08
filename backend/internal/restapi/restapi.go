@@ -38,6 +38,11 @@ type Data interface {
 	RereviewPullRequest(ctx context.Context, id int64) error
 	Users(ctx context.Context, q, sort string, days, limit, offset int) ([]store.User, int, error)
 	User(ctx context.Context, id int64, days int) (store.UserDetail, error)
+	UserName(ctx context.Context, id int64) (string, error)
+	MarkFixed(ctx context.Context, a store.Actor, findingID int64, note string) error
+	Reopen(ctx context.Context, a store.Actor, findingID int64, note string) error
+	Dismiss(ctx context.Context, a store.Actor, findingID int64, note string) error
+	CloseReview(ctx context.Context, a store.Actor, reviewID int64, note string) error
 }
 
 var _ Data = (*store.Dashboard)(nil)
@@ -48,8 +53,27 @@ type Access string
 const (
 	Public Access = "none"
 	Viewer Access = config.RoleViewer
+	Author Access = config.RoleAuthor // a developer; the handler checks it is their own work
+	Senior Access = config.RoleSenior // senior, lead or admin
 	Admin  Access = config.RoleAdmin
 )
+
+// principal is who the bearer token belongs to.
+type principal struct {
+	Role   string
+	UserID int64
+}
+
+func (p principal) actor() store.Actor {
+	return store.Actor{UserID: p.UserID, Reviewer: config.RoleAtLeast(p.Role, config.RoleSenior), Admin: p.Role == config.RoleAdmin}
+}
+
+type principalKey struct{}
+
+func principalOf(r *http.Request) principal {
+	p, _ := r.Context().Value(principalKey{}).(principal)
+	return p
+}
 
 type Route struct {
 	Method, Path string
@@ -63,8 +87,9 @@ type server struct {
 }
 
 type tokenHash struct {
-	sum  [32]byte
-	role string
+	sum    [32]byte
+	role   string
+	userID int64
 }
 
 type route struct {
@@ -88,6 +113,10 @@ var table = []route{
 	{Route{"GET", "/api/v1/pull-requests", Viewer}, (*server).listPullRequests},
 	{Route{"GET", "/api/v1/pull-requests/{id}", Viewer}, (*server).getPullRequest},
 	{Route{"POST", "/api/v1/pull-requests/{id}/rereview", Admin}, (*server).rereviewPullRequest},
+	{Route{"POST", "/api/v1/findings/{id}/fixed", Author}, (*server).findingFixed},
+	{Route{"POST", "/api/v1/findings/{id}/reopen", Senior}, (*server).findingReopen},
+	{Route{"POST", "/api/v1/findings/{id}/dismiss", Senior}, (*server).findingDismiss},
+	{Route{"POST", "/api/v1/reviews/{id}/close", Senior}, (*server).reviewClose},
 	{Route{"GET", "/api/v1/users", Viewer}, (*server).listUsers},
 	{Route{"GET", "/api/v1/users/{id}", Viewer}, (*server).getUser},
 }
@@ -109,7 +138,7 @@ func New(data Data, tokens []config.APIToken, log *slog.Logger) http.Handler {
 	}
 	s := &server{data: data, log: log}
 	for _, t := range tokens {
-		s.tokens = append(s.tokens, tokenHash{sha256.Sum256([]byte(t.Token)), t.Role})
+		s.tokens = append(s.tokens, tokenHash{sha256.Sum256([]byte(t.Token)), t.Role, t.UserID})
 	}
 	mux := http.NewServeMux()
 	for _, r := range table {
@@ -117,14 +146,18 @@ func New(data Data, tokens []config.APIToken, log *slog.Logger) http.Handler {
 		mux.HandleFunc(r.Method+" "+r.Path, func(w http.ResponseWriter, req *http.Request) {
 			role := ""
 			if r.Access != Public {
-				var ok bool
-				if role, ok = s.authenticate(req); !ok {
+				p, ok := s.authenticate(req)
+				role = p.Role
+				if ok {
+					req = req.WithContext(context.WithValue(req.Context(), principalKey{}, p))
+				}
+				if !ok {
 					w.Header().Set("WWW-Authenticate", `Bearer realm="api"`)
 					writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid bearer token")
 					return
 				}
-				if r.Access == Admin && role != config.RoleAdmin {
-					writeError(w, http.StatusForbidden, "forbidden", "this action needs the admin role")
+				if !config.RoleAtLeast(role, string(r.Access)) {
+					writeError(w, http.StatusForbidden, "forbidden", "this action needs the "+needed(r.Access)+" role")
 					return
 				}
 			}
@@ -146,20 +179,31 @@ func noStore(next http.Handler) http.Handler {
 
 // authenticate compares against every configured token without stopping at
 // the first match, so timing does not reveal which one matched.
-func (s *server) authenticate(r *http.Request) (string, bool) {
+func needed(a Access) string {
+	switch a {
+	case Author:
+		return "author (or higher)"
+	case Senior:
+		return "senior (or higher)"
+	}
+	return string(a)
+}
+
+func (s *server) authenticate(r *http.Request) (principal, bool) {
 	h := r.Header.Get("Authorization")
 	scheme, tok, ok := strings.Cut(h, " ")
 	if !ok || !strings.EqualFold(scheme, "Bearer") || strings.TrimSpace(tok) == "" {
-		return "", false
+		return principal{}, false
 	}
 	sum := sha256.Sum256([]byte(strings.TrimSpace(tok)))
-	role, found := "", 0
+	var p principal
+	found := 0
 	for _, t := range s.tokens {
 		if subtle.ConstantTimeCompare(sum[:], t.sum[:]) == 1 {
-			role, found = t.role, 1
+			p, found = principal{t.role, t.userID}, 1
 		}
 	}
-	return role, found == 1
+	return p, found == 1
 }
 
 type apiError struct {
@@ -184,11 +228,17 @@ func writeError(w http.ResponseWriter, status int, code, msg string) {
 // fail maps a storage error to a response; anything unexpected is logged and
 // answered with a generic 500 so internals do not leak.
 func (s *server) fail(w http.ResponseWriter, r *http.Request, err error) {
+	var denied *store.Denied
+	var conflict *store.Conflict
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "not found")
 	case errors.Is(err, store.ErrBadCursor):
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid cursor")
+	case errors.As(err, &denied):
+		writeError(w, http.StatusForbidden, "forbidden", err.Error())
+	case errors.As(err, &conflict):
+		writeError(w, http.StatusConflict, "conflict", err.Error())
 	case errors.Is(err, store.ErrReviewRunning), errors.Is(err, store.ErrRepoDisabled), errors.Is(err, store.ErrMergeCommit), errors.Is(err, store.ErrPRNotOpen):
 		writeError(w, http.StatusConflict, "conflict", err.Error())
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):

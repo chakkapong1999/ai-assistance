@@ -22,12 +22,26 @@ paths:
         "200": { description: The OpenAPI document, content: { application/yaml: { schema: { type: string } } } }
   /api/v1/me:
     get:
-      summary: Role of the calling token
+      summary: Role of the calling token and the user it belongs to
+      description: |
+        `user` is null for a token that is not linked to a person (the dashboard's
+        shared read token, or an admin token without a user id).
       x-required-role: viewer
       responses:
         "200":
           description: OK
-          content: { application/json: { schema: { type: object, required: [role], properties: { role: { type: string, enum: [viewer, admin] } } } } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [role, user]
+                properties:
+                  role: { type: string, enum: [viewer, author, senior, lead, admin] }
+                  user:
+                    nullable: true
+                    type: object
+                    required: [id, name]
+                    properties: { id: { type: integer, format: int64 }, name: { type: string } }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/overview:
     get:
@@ -143,6 +157,94 @@ paths:
         "202":
           description: Queued
           content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [queued] } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/findings/{id}/fixed:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+    post:
+      summary: The author says the finding is fixed
+      description: |
+        Only the author of the commit or pull request (the user the token belongs
+        to) may do this, and only while the finding is `open` and the review is
+        not closed. A senior, lead or admin may stand in when the change has no
+        linked author, and an admin may do it for anyone (an admin token needs no
+        user; what it does is recorded without a name). The optional note says
+        what was done.
+      x-required-role: author
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, properties: { note: { type: string, maxLength: 2000 } } } } }
+      responses:
+        "200":
+          description: Done
+          content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [ok] } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/findings/{id}/reopen:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+    post:
+      summary: Send a fixed or dismissed finding back to the author
+      description: |
+        A senior, lead or admin who is not the author (an admin token without a
+        user is allowed too). `note` is required (what is still wrong). On a closed review this reopens the review too.
+      x-required-role: senior
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, properties: { note: { type: string, maxLength: 2000 } } } } }
+      responses:
+        "200":
+          description: Done
+          content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [ok] } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/findings/{id}/dismiss:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+    post:
+      summary: Say the finding is not a real problem
+      description: |
+        A senior, lead or admin who is not the author. `note` is required (why).
+        409 on a closed review.
+      x-required-role: senior
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, properties: { note: { type: string, maxLength: 2000 } } } } }
+      responses:
+        "200":
+          description: Done
+          content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [ok] } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/reviews/{id}/close:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+    post:
+      summary: Close the review
+      description: |
+        A senior, lead or admin who is not the author. 409 while any finding is
+        still `open`, or when the review is already closed.
+      x-required-role: senior
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object, properties: { note: { type: string, maxLength: 2000 } } } } }
+      responses:
+        "200":
+          description: Done
+          content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [ok] } } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -291,6 +393,14 @@ components:
         active_authors: { type: integer }
         enabled_repositories: { type: integer }
         total_repositories: { type: integer }
+        fix:
+          type: object
+          description: Fix workflow of the latest reviews of the commits in the window
+          properties:
+            open_findings: { type: integer, description: Waiting for the author }
+            fixed_findings: { type: integer, description: Fixed by the author, review not closed yet }
+            reviews_ready_to_close: { type: integer, description: Every finding fixed or dismissed, waiting for a senior, lead or admin }
+            reviews_closed: { type: integer }
         series:
           type: array
           items:
@@ -352,6 +462,8 @@ components:
         score: { type: integer, nullable: true, minimum: 0, maximum: 100 }
         findings: { type: integer }
         reviewed_at: { type: string, format: date-time, nullable: true }
+        open_findings: { type: integer, description: Findings of the latest review that are still open (the author has to fix them) }
+        review_closed: { type: boolean, description: A senior, lead or admin closed the latest review }
     PullRequestState:
       type: string
       enum: [OPEN, MERGED, DECLINED, SUPERSEDED, DELETED]
@@ -382,6 +494,8 @@ components:
         score: { type: integer, nullable: true, minimum: 0, maximum: 100 }
         findings: { type: integer }
         reviewed_at: { type: string, format: date-time, nullable: true }
+        open_findings: { type: integer, description: Findings of the latest review that are still open (the author has to fix them) }
+        review_closed: { type: boolean, description: A senior, lead or admin closed the latest review }
         review_outdated: { type: boolean, description: The branch has new commits since the latest review }
         updated_at: { type: string, format: date-time }
     PullRequestPage:
@@ -468,6 +582,25 @@ components:
           nullable: true
           description: The diff hunk the finding is about (unified-diff lines). Null for reviews made before this was recorded.
         suggestion: { allOf: [{ $ref: "#/components/schemas/Suggestion" }], nullable: true }
+        status: { type: string, enum: [open, fixed, dismissed], description: "`fixed` = the author says so, waiting for a reviewer" }
+        status_by: { allOf: [{ $ref: "#/components/schemas/UserRef" }], nullable: true }
+        status_note: { type: string, nullable: true }
+        status_at: { type: string, format: date-time, nullable: true }
+        history:
+          type: array
+          description: Every change since the review, oldest first
+          items:
+            type: object
+            properties:
+              action: { type: string, enum: [fixed, reopened, dismissed] }
+              by: { allOf: [{ $ref: "#/components/schemas/UserRef" }], nullable: true }
+              note: { type: string, nullable: true }
+              at: { type: string, format: date-time }
+    UserRef:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
     Review:
       type: object
       properties:
@@ -481,6 +614,14 @@ components:
         tokens_out: { type: integer, nullable: true }
         cost_usd: { type: number, nullable: true }
         created_at: { type: string, format: date-time }
+        closed:
+          nullable: true
+          description: Set once a senior, lead or admin closed the review
+          type: object
+          properties:
+            at: { type: string, format: date-time }
+            by: { allOf: [{ $ref: "#/components/schemas/UserRef" }], nullable: true }
+            note: { type: string, nullable: true }
         findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
     CommitDetail:
       allOf:

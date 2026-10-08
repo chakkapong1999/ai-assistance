@@ -13,14 +13,14 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const role = await api.me().then((m) => m.role).catch(() => null);
+  const me = await api.me().catch(() => null);
   return (
     <html lang="en">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body>
-        <TopBar role={role} />
+        <TopBar me={me} />
         <main className="main">{children}</main>
       </body>
     </html>
