@@ -98,6 +98,7 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
             <span>Score</span>
             <span>Pull request</span>
             <span>Status</span>
+            <span>Fix</span>
             <span className="r">Findings</span>
             <span className="r">Updated</span>
           </li>
@@ -124,11 +125,11 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
                 <StatusBadge status={p.review_status} reason={p.review_skip_reason} />
                 {p.review_outdated ? <div className="muted" style={{ fontSize: ".8rem" }}>New commits since review</div> : null}
               </div>
+              <div className="side">
+                <FixMark reviewed={p.reviewed_at !== null} findings={p.findings} open={p.open_findings} closed={p.review_closed} />
+              </div>
               <div className="side r">
-                {p.score === null ? <DiffStat files={p.files_changed} additions={p.additions} deletions={p.deletions} /> : <>
-                  {p.findings} {p.findings === 1 ? "finding" : "findings"}
-                  <div><FixMark findings={p.findings} open={p.open_findings} closed={p.review_closed} /></div>
-                </>}
+                {p.score === null ? <DiffStat files={p.files_changed} additions={p.additions} deletions={p.deletions} /> : `${p.findings} ${p.findings === 1 ? "finding" : "findings"}`}
               </div>
               <time className="r" title={dateTime(p.updated_at)} dateTime={p.updated_at}>
                 {ago(p.updated_at)}

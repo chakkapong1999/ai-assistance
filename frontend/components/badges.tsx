@@ -49,9 +49,10 @@ export function Parts({ items, empty }: { items: (string | null | undefined | fa
   return xs.length ? xs.map((x) => <span key={x}>{x}</span>) : <span>{empty}</span>;
 }
 
-/** Where the fix workflow stands for a commit or pull request; nothing to show without findings. */
-export function FixMark({ findings, open, closed }: { findings: number; open: number; closed: boolean }) {
-  if (findings === 0) return null;
+/** Where the fix workflow stands for a commit or pull request, as its own table column. */
+export function FixMark({ reviewed, findings, open, closed }: { reviewed: boolean; findings: number; open: number; closed: boolean }) {
+  if (!reviewed) return <span className="muted">Not reviewed</span>;
+  if (findings === 0) return <span className="muted">Nothing to fix</span>;
   if (closed) return <span className="mark good">Closed</span>;
   if (open > 0) return <span className="mark warn">{open} to fix</span>;
   return <span className="mark info">Ready to close</span>;
