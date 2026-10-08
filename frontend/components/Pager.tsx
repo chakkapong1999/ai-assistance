@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { num } from "@/lib/format";
 
-export const SIZES = [25, 50, 100] as const;
+export const SIZES = [10, 25, 50, 100] as const;
+export const DEFAULT_SIZE = 10;
 
-/** Reads ?page and ?size from the address; anything odd falls back to page 1 and 50 rows. */
+/** Reads ?page and ?size from the address; anything odd falls back to page 1 and 10 rows. */
 export function paging(page: string, size: string): { page: number; size: number } {
   const s = Number(size);
   const p = Number(page);
   return {
     page: Number.isInteger(p) && p >= 1 && p <= 100000 ? p : 1,
-    size: (SIZES as readonly number[]).includes(s) ? s : 50,
+    size: (SIZES as readonly number[]).includes(s) ? s : DEFAULT_SIZE,
   };
 }
 
@@ -46,7 +47,7 @@ export default function Pager({
   const href = (p: number, s = size) => {
     const q = new URLSearchParams(keep);
     if (p > 1) q.set("page", String(p));
-    if (s !== 50) q.set("size", String(s));
+    if (s !== DEFAULT_SIZE) q.set("size", String(s));
     const str = q.toString();
     return str ? `${base}?${str}` : base;
   };

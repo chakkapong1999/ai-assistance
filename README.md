@@ -183,4 +183,4 @@ Besides each commit, the worker reviews every **open pull request as one diff** 
 
 ## Paging
 
-The commit and pull request lists show page numbers (`?page=3&size=25`; 25, 50 or 100 rows) and the total of matching rows. The API takes `offset` and returns `total`; `cursor` still works for clients that walk the whole list while new rows arrive, but the two cannot be combined.
+The commit and pull request lists show page numbers (`?page=3&size=25`; 10, 25, 50 or 100 rows, 10 by default) and the total of matching rows. The API takes `offset` and returns `total`; `cursor` still works for clients that walk the whole list while new rows arrive, but the two cannot be combined.
