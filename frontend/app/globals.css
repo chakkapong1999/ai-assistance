@@ -186,7 +186,7 @@ button.quiet-danger { color: var(--bad); }
 .item .side { font-size: 13.5px; color: var(--text-2); }
 .item .side .mark + .mark, .item .side .pill + .mark { margin-left: 10px; }
 .item time { font-size: 13px; color: var(--text-3); white-space: nowrap; }
-.cols-review { grid-template-columns: 4.5rem minmax(0, 1fr) 9.5rem 6rem 6rem; }
+.cols-review { grid-template-columns: 4.5rem minmax(0, 1fr) 9.5rem 8.5rem 6rem 6rem; }
 .cols-people { grid-template-columns: 4.5rem minmax(0, 1fr) 6rem 6rem 6rem; }
 .cols-repo { grid-template-columns: 4.5rem minmax(0, 1fr) 8rem 6rem 15rem; }
 .cols-attn { grid-template-columns: 11rem minmax(0, 1fr) 6rem; }

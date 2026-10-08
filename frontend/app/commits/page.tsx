@@ -92,6 +92,7 @@ export default async function Commits({ searchParams }: { searchParams: Promise<
             <span>Score</span>
             <span>Commit</span>
             <span>Review</span>
+            <span>Fix</span>
             <span className="r">Findings</span>
             <span className="r">When</span>
           </li>
@@ -114,11 +115,11 @@ export default async function Commits({ searchParams }: { searchParams: Promise<
                 <StatusBadge status={c.review_status} reason={c.review_skip_reason} />
                 {c.review_status === "skipped" && c.review_skip_reason ? <div className="muted" style={{ fontSize: ".8rem" }}>{c.review_skip_reason}</div> : null}
               </div>
+              <div className="side">
+                <FixMark reviewed={c.reviewed_at !== null} findings={c.findings} open={c.open_findings} closed={c.review_closed} />
+              </div>
               <div className="side r">
-                {c.score === null ? <DiffStat files={c.files_changed} additions={c.additions} deletions={c.deletions} /> : <>
-                  {c.findings} {c.findings === 1 ? "finding" : "findings"}
-                  <div><FixMark findings={c.findings} open={c.open_findings} closed={c.review_closed} /></div>
-                </>}
+                {c.score === null ? <DiffStat files={c.files_changed} additions={c.additions} deletions={c.deletions} /> : `${c.findings} ${c.findings === 1 ? "finding" : "findings"}`}
               </div>
               <time className="r" title={dateTime(c.committed_at)} dateTime={c.committed_at}>
                 {ago(c.committed_at)}
