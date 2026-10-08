@@ -94,7 +94,7 @@ Who is who comes from the token: `API_TOKENS=token:role:user_id`, where `user_id
 API_TOKENS='<random>:author:12,<random>:senior:7,<random>:lead:3,<random>:admin:1,<shared dashboard token>:viewer'
 ```
 
-- `viewer` reads. `author` (needs a user id) marks own findings fixed. `senior` and `lead` (need a user id) review and close. `admin` can do all of it plus the settings; an admin token without a user id still manages repositories but cannot take part in reviews.
+- `viewer` reads. `author` (needs a user id) marks own findings fixed. `senior` and `lead` (need a user id) review and close. `admin` can do all of it plus the settings, **with or without a user id**: an admin can mark a finding fixed on the author's behalf, send back, dismiss and close. An admin token without a user id is recorded without a name in the history and cannot be stopped from closing work it also wrote, so give admins their own `admin:USER_ID` token if you want that rule to hold for them.
 - Dashboard: **Sign in** (top right) with a personal token; it is kept in an httpOnly cookie for 14 days (`COOKIE_SECURE=true` marks it secure when you serve over HTTPS). Sign out removes it.
 - Where you see it: each finding and a bar above the findings on the commit/PR page; a "N to fix / Ready to close / Closed" mark in the commit and pull request lists (`open_findings`, `review_closed` in the API); a **Fixes** summary on the Overview (open findings, reviews ready to close, closed, for the commits in the window; `fix` in `GET /api/v1/overview`).
 - The Overview also shows the pipeline health from `GET /api/v1/health` (see "Health and self-repair"): a red box listing what is wrong, and the last worker check and last poll under *Cost and capacity*.

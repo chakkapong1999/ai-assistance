@@ -18,6 +18,19 @@ import (
 type Actor struct {
 	UserID   int64
 	Reviewer bool // senior, lead or admin
+	// Admin may do everything in the workflow, with or without a user: fix on
+	// the author's behalf, send back, dismiss and close. An admin token that is
+	// not linked to a user is recorded without a name and, because nobody is
+	// known, cannot be stopped from reviewing work it is also the author of.
+	Admin bool
+}
+
+// who is the user to record; nil for an admin token with no user.
+func (a Actor) who() any {
+	if a.UserID == 0 {
+		return nil
+	}
+	return a.UserID
 }
 
 // Denied means the actor may not do this; Conflict means the current state does not allow it.
@@ -102,7 +115,7 @@ func cleanNote(note string, required bool) (*string, error) {
 }
 
 func needsUser(a Actor) error {
-	if a.UserID == 0 {
+	if a.UserID == 0 && !a.Admin {
 		return &Denied{"this token is not linked to a user, so it cannot take part in reviews"}
 	}
 	return nil
@@ -112,10 +125,10 @@ func reviewerRules(a Actor, t target) error {
 	if err := needsUser(a); err != nil {
 		return err
 	}
-	if !a.Reviewer {
+	if !a.Reviewer && !a.Admin {
 		return &Denied{"only a senior, lead or admin can do this"}
 	}
-	if t.author != nil && *t.author == a.UserID {
+	if a.UserID != 0 && t.author != nil && *t.author == a.UserID {
 		return &Denied{"you cannot review your own work; ask someone else"}
 	}
 	return nil
@@ -145,11 +158,11 @@ func (d *Dashboard) act(ctx context.Context, a Actor, fn func(tx pgx.Tx) error) 
 func setStatus(ctx context.Context, tx pgx.Tx, t target, a Actor, status, action string, note *string) error {
 	if _, err := tx.Exec(ctx, `
 		UPDATE review_findings SET status = $2, status_by = $3, status_note = $4, status_at = now() WHERE id = $1`,
-		t.findingID, status, a.UserID, note); err != nil {
+		t.findingID, status, a.who(), note); err != nil {
 		return err
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO finding_events (finding_id, actor_id, action, note) VALUES ($1, $2, $3, $4)`,
-		t.findingID, a.UserID, action, note)
+		t.findingID, a.who(), action, note)
 	return err
 }
 
@@ -168,7 +181,7 @@ func (d *Dashboard) MarkFixed(ctx context.Context, a Actor, findingID int64, not
 		if err := needsUser(a); err != nil {
 			return err
 		}
-		if t.author == nil && !a.Reviewer || t.author != nil && *t.author != a.UserID {
+		if !a.Admin && (t.author == nil && !a.Reviewer || t.author != nil && *t.author != a.UserID) {
 			return &Denied{"only the author of this change can mark a finding as fixed"}
 		}
 		switch {
@@ -256,7 +269,7 @@ func (d *Dashboard) CloseReview(ctx context.Context, a Actor, reviewID int64, no
 		if open > 0 {
 			return &Conflict{fmt.Sprintf("%d findings are still open: the author fixes them, or you dismiss them with a reason", open)}
 		}
-		_, err = tx.Exec(ctx, `UPDATE reviews SET closed_at = now(), closed_by = $2, close_note = $3 WHERE id = $1`, reviewID, a.UserID, n)
+		_, err = tx.Exec(ctx, `UPDATE reviews SET closed_at = now(), closed_by = $2, close_note = $3 WHERE id = $1`, reviewID, a.who(), n)
 		return err
 	})
 }

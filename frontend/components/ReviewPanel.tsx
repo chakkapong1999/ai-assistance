@@ -86,7 +86,7 @@ function FindingState({ f }: { f: Finding }) {
           <ol>
             {f.history.map((h, i) => (
               <li key={i}>
-                <b>{h.action === "fixed" ? "Fixed" : h.action === "reopened" ? "Sent back" : "Dismissed"}</b> by {h.by?.name ?? "someone"} · {when(h.at)}
+                <b>{h.action === "fixed" ? "Fixed" : h.action === "reopened" ? "Sent back" : "Dismissed"}</b> by {h.by?.name ?? "an admin"} · {when(h.at)}
                 {h.note ? <span className="note"> {h.note}</span> : null}
               </li>
             ))}
@@ -121,7 +121,8 @@ export default function ReviewPanel({
   const groups = byFile(r.findings);
   const uid = me?.user?.id ?? null;
   const isAuthor = uid !== null && uid === authorId;
-  const reviewer = uid !== null && !!me && REVIEWERS.includes(me.role);
+  const isAdmin = me?.role === "admin"; // an admin needs no user: it may fix, send back, dismiss and close
+  const reviewer = !!me && REVIEWERS.includes(me.role) && (uid !== null || isAdmin);
   const canReview = reviewer && !isAuthor; // nobody reviews their own work
   const closed = r.closed;
   const open = r.findings.filter((f) => f.status === "open").length;
@@ -154,7 +155,7 @@ export default function ReviewPanel({
           <p>
             <span className="fix fix-closed">Review closed</span>{" "}
             <span className="muted">
-              by {closed.by?.name ?? "someone"} · {when(closed.at)}
+              by {closed.by?.name ?? "an admin"} · {when(closed.at)}
               {closed.note ? ` · ${closed.note}` : ""}
             </span>
           </p>
@@ -167,6 +168,8 @@ export default function ReviewPanel({
               {open > 0
                 ? isAuthor
                   ? "Fix them, then mark each one as fixed."
+                  : isAdmin
+                    ? "The author marks each one as fixed, or you can."
                   : "The author marks each one as fixed."
                 : canReview
                   ? "Look at the fixes, then close the review."
@@ -180,7 +183,7 @@ export default function ReviewPanel({
           ) : null
         ) : null}
         {reviewer && isAuthor && !closed ? <p className="muted">You wrote this, so someone else has to review it.</p> : null}
-        {!me?.user ? (
+        {!me?.user && !isAdmin ? (
           <p className="muted">
             <Link href={`/signin?next=${encodeURIComponent(back)}`}>Sign in</Link> with your personal token to take part.
           </p>
@@ -239,7 +242,7 @@ export default function ReviewPanel({
                     <FindingState f={f} />
                     {!closed || canReview ? (
                       <div className="fixactions">
-                        {!closed && f.status === "open" && (isAuthor || (authorId === null && canReview)) ? (
+                        {!closed && f.status === "open" && (isAuthor || isAdmin || (authorId === null && canReview)) ? (
                           <Note id={f.id} back={back} anchor={`f-${f.id}`} action={markFixed} label="Mark as fixed" placeholder="What did you change?" primary />
                         ) : null}
                         {canReview && f.status !== "open" ? (

@@ -170,8 +170,10 @@ paths:
       description: |
         Only the author of the commit or pull request (the user the token belongs
         to) may do this, and only while the finding is `open` and the review is
-        not closed; a senior, lead or admin may stand in when the change has no
-        linked author. The optional note says what was done.
+        not closed. A senior, lead or admin may stand in when the change has no
+        linked author, and an admin may do it for anyone (an admin token needs no
+        user; what it does is recorded without a name). The optional note says
+        what was done.
       x-required-role: author
       requestBody:
         required: false
@@ -191,8 +193,8 @@ paths:
     post:
       summary: Send a fixed or dismissed finding back to the author
       description: |
-        A senior, lead or admin who is not the author. `note` is required (what is
-        still wrong). On a closed review this reopens the review too.
+        A senior, lead or admin who is not the author (an admin token without a
+        user is allowed too). `note` is required (what is still wrong). On a closed review this reopens the review too.
       x-required-role: senior
       requestBody:
         required: false

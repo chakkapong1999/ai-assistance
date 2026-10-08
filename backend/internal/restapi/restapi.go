@@ -65,7 +65,7 @@ type principal struct {
 }
 
 func (p principal) actor() store.Actor {
-	return store.Actor{UserID: p.UserID, Reviewer: config.RoleAtLeast(p.Role, config.RoleSenior)}
+	return store.Actor{UserID: p.UserID, Reviewer: config.RoleAtLeast(p.Role, config.RoleSenior), Admin: p.Role == config.RoleAdmin}
 }
 
 type principalKey struct{}

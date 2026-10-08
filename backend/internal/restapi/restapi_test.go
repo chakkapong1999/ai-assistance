@@ -907,7 +907,6 @@ func TestFixWorkflowOverHTTP(t *testing.T) {
 		{fp(0, "fixed"), viewerTok, 403},
 		{fp(0, "reopen"), aliceTok, 403}, // an author is not a reviewer
 		{rp, aliceTok, 403},
-		{fp(0, "fixed"), adminTok, 403}, // admin token without a user
 		{fp(0, "fixed"), ghostTok, 403}, // user does not exist
 		{fp(0, "fixed"), robTok, 403},   // not their commit
 		{fp(0, "fixed"), samTok, 403},   // reviewers do not fix other people's findings
@@ -996,5 +995,68 @@ func TestFixWorkflowOverHTTP(t *testing.T) {
 	}
 	if got[fids[0]] != "fixed" || got[fids[1]] != "fixed" || got[fids[2]] != "dismissed" || hist[fids[1]] != 3 {
 		t.Errorf("statuses = %v history = %v", got, hist)
+	}
+}
+
+// An admin token needs no user: it may fix on the author's behalf, send back,
+// dismiss and close. What it does is recorded without a name.
+func TestAdminTokenWithoutUserRunsTheWholeWorkflow(t *testing.T) {
+	e := setup(t)
+	var rv int64
+	if err := pool.QueryRow(context.Background(), `SELECT r.id FROM reviews r JOIN commits c ON c.id = r.commit_id WHERE c.hash = 'c10000'`).Scan(&rv); err != nil {
+		t.Fatal(err)
+	}
+	var fids []int64
+	rows, _ := pool.Query(context.Background(), `SELECT id FROM review_findings WHERE review_id = $1 ORDER BY id`, rv)
+	for rows.Next() {
+		var id int64
+		rows.Scan(&id)
+		fids = append(fids, id)
+	}
+	rows.Close()
+	fp := func(i int, action string) string { return fmt.Sprintf("/api/v1/findings/%d/%s", fids[i], action) }
+	rp := fmt.Sprintf("/api/v1/reviews/%d/close", rv)
+	do := func(path string, tok string, note string) {
+		t.Helper()
+		var body any
+		if note != "" {
+			body = map[string]string{"note": note}
+		}
+		if code, b := e.post(t, path, tok, body); code != 200 {
+			t.Fatalf("POST %s = %d %s", path, code, b)
+		}
+	}
+
+	if code, _ := e.post(t, fp(0, "fixed"), viewerTok, nil); code != 403 {
+		t.Fatalf("viewer = %d, want 403", code)
+	}
+	do(fp(0, "fixed"), adminTok, "fixed for the author")
+	do(fp(1, "fixed"), adminTok, "")
+	do(fp(2, "dismiss"), adminTok, "not a problem")
+	do(fp(1, "reopen"), adminTok, "not good enough")
+	do(fp(1, "fixed"), adminTok, "")
+	do(rp, adminTok, "closed by admin")
+	if code, _ := e.post(t, rp, adminTok, nil); code != 409 {
+		t.Errorf("closing twice = %d, want 409", code)
+	}
+	do(fp(0, "reopen"), adminTok, "regressed") // reopens the review as well
+
+	var closed bool
+	var by *int64
+	var events, unnamed int
+	pool.QueryRow(context.Background(), `SELECT closed_at IS NOT NULL FROM reviews WHERE id = $1`, rv).Scan(&closed)
+	pool.QueryRow(context.Background(), `SELECT closed_by FROM reviews WHERE id = $1`, rv).Scan(&by)
+	pool.QueryRow(context.Background(), `SELECT count(*), count(*) FILTER (WHERE actor_id IS NULL) FROM finding_events`).Scan(&events, &unnamed)
+	if closed || by != nil || events != 6 || unnamed != 6 {
+		t.Errorf("closed=%v by=%v events=%d unnamed=%d", closed, by, events, unnamed)
+	}
+
+	// An admin who is linked to a user still may not review that user's own work.
+	if code, body := e.post(t, fp(0, "fixed"), adminSamTok, nil); code != 200 {
+		t.Fatalf("linked admin fixing = %d %s", code, body)
+	}
+	exec(t, `UPDATE commits SET author_user_id = $1 WHERE hash = 'c10000'`, e.ids["sam"])
+	if code, body := e.post(t, fp(0, "reopen"), adminSamTok, map[string]string{"note": "x"}); code != 403 || !strings.Contains(body, "your own work") {
+		t.Errorf("linked admin on own work = %d %s", code, body)
 	}
 }
