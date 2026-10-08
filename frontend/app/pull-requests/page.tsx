@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { ago, dateTime, one } from "@/lib/format";
 import Score from "@/components/Score";
-import Pager, { paging } from "@/components/Pager";
+import Pager, { DEFAULT_SIZE, paging } from "@/components/Pager";
 import Segments from "@/components/Segments";
 import { DiffStat, FixMark, PRStateBadge, StatusBadge } from "@/components/badges";
 
@@ -23,7 +23,7 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
 
   const author = f.author_id ? (await guard(api.user(Number(f.author_id), 1)))[0] : null;
   const keep = Object.fromEntries(Object.entries(f).filter(([, v]) => v));
-  if (list.items.length === 0 && page > 1 && list.total > 0) redirect(`/pull-requests?${new URLSearchParams({ ...keep, page: String(Math.ceil(list.total / size)), ...(size !== 50 ? { size: String(size) } : {}) })}`);
+  if (list.items.length === 0 && page > 1 && list.total > 0) redirect(`/pull-requests?${new URLSearchParams({ ...keep, page: String(Math.ceil(list.total / size)), ...(size !== DEFAULT_SIZE ? { size: String(size) } : {}) })}`);
   const filtered = Object.keys(keep).length > 0;
 
   return (
@@ -34,7 +34,7 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
       <p className="intro">Each pull request is reviewed as one diff, and again whenever its branch gets a new commit.</p>
 
       <form className="toolbar" action="/pull-requests">
-        {size !== 50 ? <input type="hidden" name="size" value={size} /> : null}
+        {size !== DEFAULT_SIZE ? <input type="hidden" name="size" value={size} /> : null}
         <Segments
           base="/pull-requests"
           param="state"
