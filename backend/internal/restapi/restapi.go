@@ -31,9 +31,11 @@ type Data interface {
 	Repository(ctx context.Context, id int64) (store.Repository, error)
 	SetReviewEnabled(ctx context.Context, id int64, enabled bool) (store.Repository, error)
 	Commits(ctx context.Context, f store.CommitFilter, cursor string, limit int) ([]store.CommitSummary, string, error)
+	CountCommits(ctx context.Context, f store.CommitFilter) (int, error)
 	Commit(ctx context.Context, id int64) (store.CommitDetail, error)
 	Rereview(ctx context.Context, id int64) error
 	PullRequests(ctx context.Context, f store.PullRequestFilter, cursor string, limit int) ([]store.PullRequestSummary, string, error)
+	CountPullRequests(ctx context.Context, f store.PullRequestFilter) (int, error)
 	PullRequest(ctx context.Context, id int64) (store.PullRequestDetail, error)
 	RereviewPullRequest(ctx context.Context, id int64) error
 	Users(ctx context.Context, q, sort string, days, limit, offset int) ([]store.User, int, error)

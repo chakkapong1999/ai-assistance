@@ -330,6 +330,46 @@ func TestCommitFieldsAndLatestReview(t *testing.T) {
 	}
 }
 
+func TestOffsetPagingAndTotal(t *testing.T) {
+	e := setup(t)
+	var all commitList
+	e.get(t, "/api/v1/commits?limit=200", &all)
+	var page struct {
+		Total int `json:"total"`
+		commitList
+	}
+	e.get(t, "/api/v1/commits?limit=2&offset=2", &page)
+	if page.Total != len(all.Items) || len(page.Items) != 2 {
+		t.Fatalf("total=%d items=%d, want total %d and 2 items", page.Total, len(page.Items), len(all.Items))
+	}
+	skipped := commitList{Items: all.Items[2:4]}
+	if got, want := hashes(page.commitList), hashes(skipped); got != want {
+		t.Errorf("offset page = %q, want %q", got, want)
+	}
+	// The total follows the filters, not the page.
+	e.get(t, "/api/v1/commits?limit=1&status=done", &page)
+	if page.Total != 2 || len(page.Items) != 1 {
+		t.Errorf("filtered total=%d items=%d, want 2 and 1", page.Total, len(page.Items))
+	}
+	// Past the end is an empty page, not an error.
+	e.get(t, "/api/v1/commits?offset=500", &page)
+	if len(page.Items) != 0 || page.Total != len(all.Items) {
+		t.Errorf("past the end: items=%d total=%d", len(page.Items), page.Total)
+	}
+	for _, p := range []string{"/api/v1/commits?offset=-1", "/api/v1/commits?offset=x", "/api/v1/commits?offset=1&cursor=abc", "/api/v1/pull-requests?offset=-1"} {
+		if code, b := e.do(t, "GET", p, viewerTok, nil); code != 400 {
+			t.Errorf("GET %s = %d %s, want 400", p, code, b)
+		}
+	}
+	var prs struct {
+		Total int `json:"total"`
+	}
+	e.get(t, "/api/v1/pull-requests?limit=1", &prs)
+	if prs.Total < 0 {
+		t.Errorf("pr total = %d", prs.Total)
+	}
+}
+
 func TestPaginationWalksEveryCommitOnce(t *testing.T) {
 	e := setup(t)
 	// Identical timestamps force the id tiebreak of the cursor.

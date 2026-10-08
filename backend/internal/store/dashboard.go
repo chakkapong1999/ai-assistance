@@ -431,6 +431,7 @@ type CommitFilter struct {
 	Since    *time.Time
 	Until    *time.Time
 	Fix      string // open | ready | closed, see fixCond
+	Offset   int    // skip this many rows; not for use with a cursor
 }
 
 // ValidFix reports whether s is a fix filter value ("" means no filter).
@@ -474,10 +475,8 @@ func decodeCursor(s string) (time.Time, int64, error) {
 	return time.UnixMicro(n).UTC(), id, nil
 }
 
-// Commits lists newest first with keyset pagination on (committed_at, id), so
-// pages stay stable while new commits arrive. next is "" on the last page.
-func (d *Dashboard) Commits(ctx context.Context, f CommitFilter, cursor string, limit int) (items []CommitSummary, next string, err error) {
-	var a args
+// commitConds is the WHERE of a commit list, shared by the page and its count.
+func commitConds(f CommitFilter, a *args) []string {
 	var conds []string
 	if f.RepoID != 0 {
 		conds = append(conds, "c.repo_id = "+a.add(f.RepoID))
@@ -504,6 +503,24 @@ func (d *Dashboard) Commits(ctx context.Context, f CommitFilter, cursor string, 
 	if c := fixCond(f.Fix); c != "" {
 		conds = append(conds, c)
 	}
+	return conds
+}
+
+// CountCommits is the number of commits a filter matches, for page numbers.
+func (d *Dashboard) CountCommits(ctx context.Context, f CommitFilter) (int, error) {
+	var a args
+	var n int
+	if err := d.pool.QueryRow(ctx, "SELECT count(*)::int"+commitFrom+where(commitConds(f, &a)), a...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count commits: %w", err)
+	}
+	return n, nil
+}
+
+// Commits lists newest first. Page with next as the cursor (stable while new
+// commits arrive), or with f.Offset when the caller wants page numbers.
+func (d *Dashboard) Commits(ctx context.Context, f CommitFilter, cursor string, limit int) (items []CommitSummary, next string, err error) {
+	var a args
+	conds := commitConds(f, &a)
 	if cursor != "" {
 		t, id, err := decodeCursor(cursor)
 		if err != nil {
@@ -513,7 +530,7 @@ func (d *Dashboard) Commits(ctx context.Context, f CommitFilter, cursor string, 
 	}
 
 	q := "SELECT " + commitCols + commitFrom + where(conds) +
-		" ORDER BY c.committed_at DESC, c.id DESC LIMIT " + a.add(limit+1)
+		" ORDER BY c.committed_at DESC, c.id DESC LIMIT " + a.add(limit+1) + " OFFSET " + a.add(f.Offset)
 	rows, err := d.pool.Query(ctx, q, a...)
 	if err != nil {
 		return nil, "", fmt.Errorf("list commits: %w", err)

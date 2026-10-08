@@ -112,7 +112,7 @@ paths:
   /api/v1/commits:
     get:
       summary: List commits, newest first
-      description: Keyset pagination; pass `next_cursor` back as `cursor`. Each commit shows the score of its latest review.
+      description: Page with `next_cursor` passed back as `cursor` (stable while new rows arrive), or with `offset` for page numbers; not both. `total` counts every match. Each commit shows the score of its latest review.
       x-required-role: viewer
       parameters:
         - { name: repo_id, in: query, schema: { type: integer, format: int64, minimum: 1 } }
@@ -124,6 +124,7 @@ paths:
         - { name: since, in: query, schema: { type: string, format: date-time }, description: committed_at >= since }
         - { name: until, in: query, schema: { type: string, format: date-time }, description: committed_at < until }
         - { name: cursor, in: query, schema: { type: string } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000 }, description: Rows to skip; not with cursor }
         - { $ref: "#/components/parameters/limit" }
       responses:
         "200":
@@ -255,7 +256,7 @@ paths:
     get:
       summary: List pull requests, most recently updated first
       description: |
-        Keyset pagination; pass `next_cursor` back as `cursor`. A pull request is
+        Page with `next_cursor` passed back as `cursor` (stable while new rows arrive), or with `offset` for page numbers; not both. `total` counts every match. A pull request is
         reviewed as one diff (all its commits together), separately from its
         commits' own reviews; `score` and `findings` are from its latest review.
         Only pull requests of repositories the poller reads are listed.
@@ -268,6 +269,7 @@ paths:
         - { name: fix, in: query, description: "Fix workflow of the latest review: open = findings left to fix, ready = all fixed and waiting for a reviewer, closed", schema: { type: string, enum: [open, ready, closed] } }
         - { name: q, in: query, schema: { type: string, maxLength: 200 }, description: Case-insensitive match on title, source branch or number }
         - { name: cursor, in: query, schema: { type: string } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 1000000 }, description: Rows to skip; not with cursor }
         - { $ref: "#/components/parameters/limit" }
       responses:
         "200":
@@ -504,6 +506,7 @@ components:
       type: object
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/PullRequestSummary" } }
+        total: { type: integer, description: Pull requests matching the filters, all pages together }
         next_cursor: { type: string, nullable: true }
     PullRequestDetail:
       allOf:
@@ -517,6 +520,7 @@ components:
       type: object
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/CommitSummary" } }
+        total: { type: integer, description: Commits matching the filters, all pages together }
         next_cursor: { type: string, nullable: true }
     Suggestion:
       type: object

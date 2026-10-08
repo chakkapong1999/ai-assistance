@@ -83,11 +83,11 @@ type PullRequestFilter struct {
 	Status   string // review status
 	Q        string
 	Fix      string // open | ready | closed
+	Offset   int    // skip this many rows; not for use with a cursor
 }
 
-// PullRequests lists most recently updated first, with keyset pagination.
-func (d *Dashboard) PullRequests(ctx context.Context, f PullRequestFilter, cursor string, limit int) (items []PullRequestSummary, next string, err error) {
-	var a args
+// pullRequestConds is the WHERE of a pull request list, shared by the page and its count.
+func pullRequestConds(f PullRequestFilter, a *args) []string {
 	var conds []string
 	if f.RepoID != 0 {
 		conds = append(conds, "pr.repo_id = "+a.add(f.RepoID))
@@ -108,6 +108,23 @@ func (d *Dashboard) PullRequests(ctx context.Context, f PullRequestFilter, curso
 	if c := fixCond(f.Fix); c != "" {
 		conds = append(conds, c)
 	}
+	return conds
+}
+
+// CountPullRequests is the number of pull requests a filter matches.
+func (d *Dashboard) CountPullRequests(ctx context.Context, f PullRequestFilter) (int, error) {
+	var a args
+	var n int
+	if err := d.pool.QueryRow(ctx, "SELECT count(*)::int"+prFrom+where(pullRequestConds(f, &a)), a...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count pull requests: %w", err)
+	}
+	return n, nil
+}
+
+// PullRequests lists most recently updated first, paged by cursor or by f.Offset.
+func (d *Dashboard) PullRequests(ctx context.Context, f PullRequestFilter, cursor string, limit int) (items []PullRequestSummary, next string, err error) {
+	var a args
+	conds := pullRequestConds(f, &a)
 	if cursor != "" {
 		t, id, err := decodeCursor(cursor)
 		if err != nil {
@@ -117,7 +134,7 @@ func (d *Dashboard) PullRequests(ctx context.Context, f PullRequestFilter, curso
 	}
 
 	q := "SELECT " + prCols + prFrom + where(conds) +
-		" ORDER BY " + prSortAt + " DESC, pr.id DESC LIMIT " + a.add(limit+1)
+		" ORDER BY " + prSortAt + " DESC, pr.id DESC LIMIT " + a.add(limit+1) + " OFFSET " + a.add(f.Offset)
 	rows, err := d.pool.Query(ctx, q, a...)
 	if err != nil {
 		return nil, "", fmt.Errorf("list pull requests: %w", err)

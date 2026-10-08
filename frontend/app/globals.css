@@ -206,7 +206,15 @@ button.quiet-danger { color: var(--bad); }
   .item .r { text-align: left; }
   .item.hd { display: none; }
 }
-.pager { display: flex; justify-content: space-between; margin-top: 16px; font-size: 13.5px; color: var(--text-3); }
+.pager { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px 20px; margin-top: 16px; font-size: 13.5px; color: var(--text-3); }
+.pager .pages { display: flex; align-items: center; gap: 2px; list-style: none; margin: 0; padding: 0; }
+.pager .pages a, .pager .pages span, .pager .sizes a, .pager .sizes span[aria-current] { min-width: 32px; padding: 5px 9px; border-radius: 6px; text-align: center; text-decoration: none; }
+.pager .pages a, .pager .sizes a { color: var(--text-2); }
+.pager .pages a:hover, .pager .sizes a:hover { background: var(--sunk); color: var(--text); }
+.pager [aria-current] { background: var(--hl); color: #1c2233; font-weight: 600; }
+.pager .off, .pager .gap { color: var(--text-3); opacity: .6; }
+.pager .sizes { display: flex; align-items: center; gap: 2px; }
+.pager .sizes { gap: 2px; } .pager .sizes > :first-child { margin-right: 4px; }
 
 /* ---------- status marks ---------- */
 .mark { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 500; white-space: nowrap; color: var(--text-2); }

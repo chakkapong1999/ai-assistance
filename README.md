@@ -180,3 +180,7 @@ Besides each commit, the worker reviews every **open pull request as one diff** 
 - Commits and pull requests can be filtered by fix state (`fix=open|ready|closed` in the API): findings left to fix, all fixed and waiting for a reviewer, or closed.
 - Repositories can be filtered to review on or off.
 - On a commit or pull request, the findings can be filtered by text, severity and fix status (`fq`, `fsev`, `fs` in the page address).
+
+## Paging
+
+The commit and pull request lists show page numbers (`?page=3&size=25`; 25, 50 or 100 rows) and the total of matching rows. The API takes `offset` and returns `total`; `cursor` still works for clients that walk the whole list while new rows arrive, but the two cannot be combined.
