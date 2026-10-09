@@ -185,6 +185,24 @@ func TestPermissionsDecode(t *testing.T) {
 	}
 }
 
+func TestGetUserEscapesTheUUIDAndDecodes(t *testing.T) {
+	var path string
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.EscapedPath()
+		fmt.Fprint(w, `{"uuid":"{u-1}","account_id":"a1","display_name":"Max","nickname":"max","links":{"avatar":{"href":"https://img/max.png"}}}`)
+	}), nil)
+	u, err := c.GetUser(context.Background(), "{u-1}")
+	if err != nil || u.DisplayName != "Max" || u.Links.Avatar.Href != "https://img/max.png" {
+		t.Fatalf("user = %+v, %v", u, err)
+	}
+	if !strings.HasSuffix(path, "/users/%7Bu-1%7D") {
+		t.Errorf("path = %s", path)
+	}
+	if _, err := c.GetUser(context.Background(), " "); err == nil {
+		t.Error("blank id")
+	}
+}
+
 func TestBadJSONPageIsAnError(t *testing.T) {
 	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>`))

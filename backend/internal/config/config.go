@@ -62,6 +62,9 @@ type Config struct {
 	// ReconcileInterval is how often the worker looks for work that lost its
 	// job and queues it again.
 	ReconcileInterval time.Duration
+	// DirectoryInterval is how often roles, permissions and profiles are read
+	// from Bitbucket again. Default 24h.
+	DirectoryInterval time.Duration
 
 	// ReviewNewRepos: a repository first seen by the worker starts with review
 	// on (default) or off. It only decides the starting value; an admin's later
@@ -159,6 +162,7 @@ const (
 	defaultPollInterval      = 5 * time.Minute
 	defaultPollLookback      = 7 * 24 * time.Hour
 	defaultReconcileInterval = 5 * time.Minute
+	defaultDirectoryInterval = 24 * time.Hour
 	// MinPollInterval protects the Bitbucket API quota.
 	MinPollInterval = time.Minute
 )
@@ -237,11 +241,12 @@ func Load(mode string, getenv func(string) string) (Config, error) {
 	c.PollInterval = defaultPollInterval
 	c.PollLookback = defaultPollLookback
 	c.ReconcileInterval = defaultReconcileInterval
+	c.DirectoryInterval = defaultDirectoryInterval
 	for _, d := range []struct {
 		key string
 		dst *time.Duration
 		min time.Duration
-	}{{"POLL_INTERVAL", &c.PollInterval, MinPollInterval}, {"POLL_LOOKBACK", &c.PollLookback, time.Hour}, {"RECONCILE_INTERVAL", &c.ReconcileInterval, time.Minute}} {
+	}{{"POLL_INTERVAL", &c.PollInterval, MinPollInterval}, {"POLL_LOOKBACK", &c.PollLookback, time.Hour}, {"RECONCILE_INTERVAL", &c.ReconcileInterval, time.Minute}, {"DIRECTORY_SYNC_INTERVAL", &c.DirectoryInterval, time.Hour}} {
 		if v := get(d.key, ""); v != "" {
 			parsed, err := time.ParseDuration(v)
 			switch {

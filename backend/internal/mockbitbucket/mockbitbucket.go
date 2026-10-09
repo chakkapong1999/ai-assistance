@@ -75,13 +75,88 @@ type Mock struct {
 	seq     int
 	calls   map[string]int
 	queries map[string][]string // kind -> raw query of each request
+
+	accounts   map[string]*account          // uuid -> profile
+	wsRoles    map[string]map[string]string // workspace -> uuid -> role
+	repoPerms  map[string]map[string]string // "workspace/slug" -> uuid -> permission
+	noPermsFor map[string]bool              // "workspace/slug" or "workspace" the token may not read
+}
+
+type account struct{ uuid, accountID, name, nickname, avatar string }
+
+// AddAccount creates (or replaces) a Bitbucket account.
+func (m *Mock) AddAccount(uuid, accountID, name, nickname, avatar string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.accounts[uuid] = &account{uuid, accountID, name, nickname, avatar}
+}
+
+// SetWorkspaceRole gives an account a role (owner, collaborator, member) in a
+// workspace; an empty role removes it.
+func (m *Mock) SetWorkspaceRole(workspace, uuid, role string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.wsRoles[workspace] == nil {
+		m.wsRoles[workspace] = map[string]string{}
+	}
+	if role == "" {
+		delete(m.wsRoles[workspace], uuid)
+		return
+	}
+	m.wsRoles[workspace][uuid] = role
+}
+
+// SetRepoPermission gives an account admin, write or read on a repository; an empty permission removes it.
+func (m *Mock) SetRepoPermission(workspace, slug, uuid, permission string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := workspace + "/" + slug
+	if m.repoPerms[k] == nil {
+		m.repoPerms[k] = map[string]string{}
+	}
+	if permission == "" {
+		delete(m.repoPerms[k], uuid)
+		return
+	}
+	m.repoPerms[k][uuid] = permission
+}
+
+// DenyPermissions makes the permission endpoints answer 403 for a workspace
+// ("ws") or a repository ("ws/slug"), like a token without admin scope.
+func (m *Mock) DenyPermissions(key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.noPermsFor[key] = true
+}
+
+func accountJSON(a *account) map[string]any {
+	return map[string]any{
+		"type": "user", "uuid": a.uuid, "account_id": a.accountID, "display_name": a.name, "nickname": a.nickname,
+		"links": map[string]any{"avatar": map[string]any{"href": a.avatar}},
+	}
+}
+
+func (m *Mock) permissionList(grants map[string]string) []any {
+	keys := make([]string, 0, len(grants))
+	for u := range grants {
+		keys = append(keys, u)
+	}
+	sort.Strings(keys)
+	out := make([]any, 0, len(keys))
+	for _, u := range keys {
+		if a := m.accounts[u]; a != nil {
+			out = append(out, map[string]any{"type": "permission", "permission": grants[u], "user": accountJSON(a)})
+		}
+	}
+	return out
 }
 
 func New(diff string) *Mock {
 	if strings.TrimSpace(diff) == "" {
 		diff = SampleDiff
 	}
-	return &Mock{diff: diff, repos: map[string]*repo{}, commits: map[string]*commit{}, calls: map[string]int{}, queries: map[string][]string{}}
+	return &Mock{diff: diff, repos: map[string]*repo{}, commits: map[string]*commit{}, calls: map[string]int{}, queries: map[string][]string{},
+		accounts: map[string]*account{}, wsRoles: map[string]map[string]string{}, repoPerms: map[string]map[string]string{}, noPermsFor: map[string]bool{}}
 }
 
 // AddRepo creates a repository whose main branch is "main" and has no commits yet.
@@ -377,6 +452,50 @@ func (m *Mock) Handler() http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		fmt.Fprint(w, m.diff)
+	})
+	forbidden := func(w http.ResponseWriter) {
+		writeJSON(w, http.StatusForbidden, map[string]any{"type": "error", "error": map[string]string{"message": "Forbidden"}})
+	}
+	mux.HandleFunc("GET /workspaces/{workspace}/permissions", func(w http.ResponseWriter, r *http.Request) {
+		m.count("workspace_permissions", r)
+		ws := r.PathValue("workspace")
+		m.mu.Lock()
+		denied, vals := m.noPermsFor[ws], m.permissionList(m.wsRoles[ws])
+		m.mu.Unlock()
+		if denied {
+			forbidden(w)
+			return
+		}
+		paged(w, r, vals)
+	})
+	mux.HandleFunc("GET /repositories/{workspace}/{repo}/permissions-config/users", func(w http.ResponseWriter, r *http.Request) {
+		m.count("repo_permissions", r)
+		k := r.PathValue("workspace") + "/" + r.PathValue("repo")
+		m.mu.Lock()
+		denied, vals := m.noPermsFor[k], m.permissionList(m.repoPerms[k])
+		m.mu.Unlock()
+		if denied {
+			forbidden(w)
+			return
+		}
+		paged(w, r, vals)
+	})
+	mux.HandleFunc("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		m.count("user", r)
+		id := r.PathValue("id")
+		m.mu.Lock()
+		var body map[string]any
+		for _, a := range m.accounts {
+			if a.uuid == id || a.accountID == id {
+				body = accountJSON(a)
+			}
+		}
+		m.mu.Unlock()
+		if body == nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"type": "error", "error": map[string]string{"message": "No such user"}})
+			return
+		}
+		writeJSON(w, http.StatusOK, body)
 	})
 	mux.HandleFunc("GET /repositories/{workspace}", func(w http.ResponseWriter, r *http.Request) {
 		m.count("repositories", r)

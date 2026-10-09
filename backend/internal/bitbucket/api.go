@@ -193,6 +193,22 @@ func (c *Client) ListWorkspacePermissions(ctx context.Context, workspace string)
 	return getAll[WorkspacePermission](ctx, c, c.endpoint("workspaces", workspace, "permissions")+"?pagelen=100")
 }
 
+// GetUser returns one account's profile. id is "{uuid}" (with the braces) or an account id.
+func (c *Client) GetUser(ctx context.Context, id string) (User, error) {
+	var u User
+	if err := need(map[string]string{"id": id}); err != nil {
+		return u, err
+	}
+	body, err := c.get(ctx, c.endpoint("users", id))
+	if err != nil {
+		return u, err
+	}
+	if err := json.Unmarshal(body, &u); err != nil {
+		return u, fmt.Errorf("decode user: %w", err)
+	}
+	return u, nil
+}
+
 // ListRepoUserPermissions returns the users with an explicit permission on a repository.
 func (c *Client) ListRepoUserPermissions(ctx context.Context, workspace, repo string) ([]RepoPermission, error) {
 	if err := need(map[string]string{"workspace": workspace, "repo": repo}); err != nil {
