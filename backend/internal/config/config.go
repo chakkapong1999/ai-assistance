@@ -80,6 +80,8 @@ type Config struct {
 	MockReviewScenario string
 	MockReviewDelay    time.Duration
 	ClaudeBin          string
+	// ClaudeModel is passed to the CLI as --model (REVIEWER_MODE=claude_cli).
+	ClaudeModel string
 }
 
 // Roles of an API token, lowest first. viewer = read only; author = a developer
@@ -95,6 +97,9 @@ const (
 )
 
 // MinTokenLen is the shortest accepted API token.
+// DefaultClaudeModel is the model reviews use unless CLAUDE_MODEL says otherwise.
+const DefaultClaudeModel = "claude-sonnet-5-5"
+
 const MinTokenLen = 16
 
 type APIToken struct {
@@ -214,6 +219,7 @@ func Load(mode string, getenv func(string) string) (Config, error) {
 		ReviewerMode:           get("REVIEWER_MODE", ReviewerMock),
 		MockReviewScenario:     get("MOCK_REVIEW_SCENARIO", ScenarioFindings),
 		ClaudeBin:              get("CLAUDE_BIN", "claude"),
+		ClaudeModel:            get("CLAUDE_MODEL", DefaultClaudeModel),
 	}
 
 	var errs []error

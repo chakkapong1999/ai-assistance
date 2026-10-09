@@ -12,7 +12,7 @@ func New(cfg config.Config) (Reviewer, error) {
 	case config.ReviewerMock:
 		return Mock{Scenario: cfg.MockReviewScenario, Delay: cfg.MockReviewDelay}, nil
 	case config.ReviewerClaudeCLI:
-		return NewClaudeCLI(CLIOptions{Bin: cfg.ClaudeBin}), nil
+		return NewClaudeCLI(CLIOptions{Bin: cfg.ClaudeBin, Model: cfg.ClaudeModel}), nil
 	}
 	return nil, fmt.Errorf("review: unknown reviewer mode %q", cfg.ReviewerMode)
 }

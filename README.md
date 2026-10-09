@@ -213,3 +213,7 @@ The commit and pull request lists show page numbers (`?page=3&size=25`; 10, 25, 
 ## Cost of failed attempts
 
 A review call that is thrown away (unusable answer, a later chunk failing after earlier ones were paid for, a failed save) still costs money. Each such attempt is stored in `review_attempts` (migration 0006, run `make migrate`) with the usage the reviewer reported, and the overview adds it to the totals and shows it as "Failed attempts". "Cost per run" stays the mean of stored reviews. Shutdowns and provider limits that cost nothing are not recorded. A commit or pull request with failed attempts shows a line about them on its detail page (`failed_attempts` in the API).
+
+## Which model reviews
+
+With `REVIEWER_MODE=claude_cli` the worker calls `claude -p --model $CLAUDE_MODEL`; the default is `claude-sonnet-5-5`. The model name the CLI reports back is stored with every review and shown on its detail page (`mock` for mock reviews). Reviews made before this change show `claude_cli`. The CLI must be logged in to an account that can use the model.
