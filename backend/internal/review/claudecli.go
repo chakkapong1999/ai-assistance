@@ -65,12 +65,34 @@ type cliEnvelope struct {
 	Result  string `json:"result"`
 	// TotalCostUSD is the CLI's own estimate for the call.
 	TotalCostUSD *float64 `json:"total_cost_usd"`
-	Usage        *struct {
+	// ModelUsage is keyed by the model that served the call.
+	ModelUsage map[string]struct {
+		CostUSD float64 `json:"costUSD"`
+	} `json:"modelUsage"`
+	Usage *struct {
 		InputTokens         int `json:"input_tokens"`
 		CacheCreationTokens int `json:"cache_creation_input_tokens"`
 		CacheReadTokens     int `json:"cache_read_input_tokens"`
 		OutputTokens        int `json:"output_tokens"`
 	} `json:"usage"`
+}
+
+// model is the model that actually answered: the one named in modelUsage
+// (the costliest, if the CLI used a helper model too), else what was asked for.
+func (e cliEnvelope) model(asked string) string {
+	best, bestCost := "", -1.0
+	for name, m := range e.ModelUsage {
+		if m.CostUSD > bestCost || (m.CostUSD == bestCost && name < best) {
+			best, bestCost = name, m.CostUSD
+		}
+	}
+	switch {
+	case best != "":
+		return best
+	case asked != "":
+		return asked
+	}
+	return ModelClaudeCLI
 }
 
 func (e cliEnvelope) usage() Usage {
@@ -145,7 +167,7 @@ func (c *ClaudeCLI) Review(ctx context.Context, req Request) (Result, error) {
 		// The call was made and paid for even though its answer is unusable.
 		return Result{Usage: env.usage()}, err
 	}
-	res.Model = ModelClaudeCLI
+	res.Model = env.model(c.opts.Model)
 	res.Usage = env.usage()
 	return res, nil
 }

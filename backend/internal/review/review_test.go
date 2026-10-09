@@ -512,7 +512,7 @@ EOF
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Model != ModelClaudeCLI || len(res.Findings) != 1 || res.Summary != "fine" {
+	if res.Model != "m1" || len(res.Findings) != 1 || res.Summary != "fine" {
 		t.Fatalf("result: %+v", res)
 	}
 	args, _ := os.ReadFile(filepath.Join(dir, "args"))
@@ -717,5 +717,31 @@ func TestCLIFailureDetailIsNeverEmpty(t *testing.T) {
 	}
 	if got := cliFailureDetail(cliEnvelope{}, errors.New("x"), RunResult{}); got == "" {
 		t.Fatal("empty message")
+	}
+}
+
+func TestClaudeCLIReportsTheModelThatAnswered(t *testing.T) {
+	// modelUsage names who served the call; with a helper model too, the costliest wins.
+	bin := fakeClaude(t, `
+cat >/dev/null
+cat <<'EOF'
+{"type":"result","is_error":false,"result":"{\"summary\":\"ok\",\"findings\":[]}","modelUsage":{"claude-haiku-4-5-20251001":{"costUSD":0.001},"claude-sonnet-5-5":{"costUSD":0.2}}}
+EOF
+`)
+	res, err := NewClaudeCLI(CLIOptions{Bin: bin, Model: "sonnet"}).Review(context.Background(), cliRequest(t))
+	if err != nil || res.Model != "claude-sonnet-5-5" {
+		t.Fatalf("model = %q err = %v", res.Model, err)
+	}
+}
+
+func TestClaudeCLIWithoutModelUsageFallsBack(t *testing.T) {
+	bin := fakeClaude(t, `
+cat >/dev/null
+cat <<'EOF'
+{"type":"result","is_error":false,"result":"{\"summary\":\"ok\",\"findings\":[]}"}
+EOF
+`)
+	if res, err := NewClaudeCLI(CLIOptions{Bin: bin}).Review(context.Background(), cliRequest(t)); err != nil || res.Model != ModelClaudeCLI {
+		t.Fatalf("no model asked: %q %v", res.Model, err)
 	}
 }

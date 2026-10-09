@@ -335,3 +335,15 @@ func TestReviewNewReposDefaultsToOnAndCanBeSwitchedOff(t *testing.T) {
 		t.Errorf("an invalid value must be an error naming the variable, got %v", err)
 	}
 }
+
+func TestClaudeModelDefaultsToSonnet55(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t"}
+	c, err := Load(ModeWorker, env(base))
+	if err != nil || c.ClaudeModel != "claude-sonnet-5-5" {
+		t.Fatalf("default: %q %v", c.ClaudeModel, err)
+	}
+	base["CLAUDE_MODEL"] = "claude-opus-5-5"
+	if c, err = Load(ModeWorker, env(base)); err != nil || c.ClaudeModel != "claude-opus-5-5" {
+		t.Fatalf("override: %q %v", c.ClaudeModel, err)
+	}
+}
