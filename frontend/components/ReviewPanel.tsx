@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CommitDetail, Finding, Me, Severity } from "@/lib/api";
+import { matches, type FindingFilter } from "@/lib/findings";
 import { dateTime, num, usd } from "@/lib/format";
 import { closeReview, dismiss, markFixed, sendBack } from "@/app/workflow/actions";
 import CopyButton from "./CopyButton";
@@ -35,12 +36,7 @@ function Path({ path }: { path: string }) {
   );
 }
 
-export type FindingFilter = { q: string; status: string; severity: string };
-
-const matches = (f: Finding, x: FindingFilter) =>
-  (!x.status || f.status === x.status) &&
-  (!x.severity || f.severity === x.severity) &&
-  (!x.q || [f.title, f.explanation, f.file_path, f.category].some((t) => t.toLowerCase().includes(x.q.toLowerCase())));
+export type { FindingFilter };
 
 const REVIEWERS = ["senior", "lead", "admin"];
 

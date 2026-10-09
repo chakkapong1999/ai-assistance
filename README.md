@@ -18,6 +18,8 @@ make migrate-river  # River's job-queue schema (needs Go; River owns these table
 make run-api        # refuses to start if either step above was skipped
 ```
 
+Frontend unit tests (paging, finding filters, formatting) run with `npm test` in `frontend/` (Node 22.18 or newer, no extra packages).
+
 Integration tests that need Postgres run only when `TEST_DATABASE_URL` is set
 (see `backend/.env.example`); otherwise they are skipped.
 
