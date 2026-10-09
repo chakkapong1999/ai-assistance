@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CommitDetail, Finding, Me, Severity } from "@/lib/api";
+import { matches, type FindingFilter } from "@/lib/findings";
 import { dateTime, num, usd } from "@/lib/format";
 import { closeReview, dismiss, markFixed, sendBack } from "@/app/workflow/actions";
 import CopyButton from "./CopyButton";
@@ -35,12 +36,7 @@ function Path({ path }: { path: string }) {
   );
 }
 
-export type FindingFilter = { q: string; status: string; severity: string };
-
-const matches = (f: Finding, x: FindingFilter) =>
-  (!x.status || f.status === x.status) &&
-  (!x.severity || f.severity === x.severity) &&
-  (!x.q || [f.title, f.explanation, f.file_path, f.category].some((t) => t.toLowerCase().includes(x.q.toLowerCase())));
+export type { FindingFilter };
 
 const REVIEWERS = ["senior", "lead", "admin"];
 
@@ -150,7 +146,7 @@ export default function ReviewPanel({
   const canReview = reviewer && !isAuthor; // nobody reviews their own work
   const closed = r.closed;
   const open = r.findings.filter((f) => f.status === "open").length;
-  const counts = order.map((s) => [s, r.findings.filter((f) => f.severity === s).length] as const).filter(([, n]) => n > 0);
+  const counts = order.map((s) => [s, shown.filter((f) => f.severity === s).length] as const).filter(([, n]) => n > 0);
 
   return (
     <>
@@ -329,6 +325,11 @@ export default function ReviewPanel({
 
           <nav className="outline" aria-label="Findings in this review">
             <h2>Outline</h2>
+            {filtered ? (
+              <p className="muted">
+                {shown.length} of {r.findings.length} shown
+              </p>
+            ) : null}
             <div className="counts">
               {counts.map(([s, n]) => (
                 <span key={s} className={`sev sev-${s}`}>

@@ -97,6 +97,21 @@ var WaitingOrRunning = []rivertype.JobState{
 	rivertype.JobStateRetryable, rivertype.JobStateScheduled,
 }
 
+// SyncDirectoryArgs refreshes who is who: workspace roles, repository
+// permissions and the profiles (name, avatar) of everyone seen. It is inserted
+// on a timer by the worker, once a day by default.
+type SyncDirectoryArgs struct{}
+
+func (SyncDirectoryArgs) Kind() string { return "sync_directory" }
+
+func (SyncDirectoryArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		Queue:       QueueDefault,
+		MaxAttempts: 3,
+		UniqueOpts:  river.UniqueOpts{ByArgs: true, ByState: WaitingOrRunning},
+	}
+}
+
 // ReconcileArgs runs one reconciliation pass: it finds work that lost its job
 // (an event nobody processed, a commit or pull request marked pending or
 // running with no job behind it) and queues it again. It is inserted on a

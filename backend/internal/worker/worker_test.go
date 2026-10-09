@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -591,5 +592,37 @@ func TestMockReviewLeavesUsageNull(t *testing.T) {
 	waitFor(t, "reviewed", func() bool { return count(t, `SELECT count(*) FROM reviews`) == 1 })
 	if n := count(t, `SELECT count(*) FROM reviews WHERE tokens_in IS NULL AND tokens_out IS NULL AND cost_usd IS NULL`); n != 1 {
 		t.Fatalf("mock usage must be NULL, not zero: %d", n)
+	}
+}
+
+func TestFailedAttemptsAreCounted(t *testing.T) {
+	id := oneCommit(t)
+	w := newReviewWorker(usageRV{review.Mock{Scenario: config.ScenarioInvalidJSON}}, &fakeBB{diff: diffText})
+
+	if err := w.Work(context.Background(), reviewJob(id, 1, 5)); !errors.Is(err, review.ErrInvalidOutput) {
+		t.Fatalf("err = %v", err)
+	}
+	if err := w.Work(context.Background(), reviewJob(id, 2, 5)); !errors.Is(err, review.ErrInvalidOutput) {
+		t.Fatalf("err = %v", err)
+	}
+	if n := count(t, `SELECT count(*) FROM review_attempts WHERE commit_id = `+strconv.FormatInt(id, 10)+
+		` AND tokens_in = 1234 AND tokens_out = 56 AND cost_usd = 0.0789 AND error <> ''`); n != 2 {
+		t.Fatalf("recorded failed attempts = %d, want 2 (each retry is paid for)", n)
+	}
+	if n := count(t, `SELECT count(*) FROM reviews`); n != 0 {
+		t.Fatalf("a failed attempt must not store a review: %d", n)
+	}
+}
+
+func TestShutdownAttemptIsNotCounted(t *testing.T) {
+	reset(t)
+	recordAttempt2 := func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		recordAttempt(ctx, testPool, subject{}, 1, review.Usage{}, context.Canceled, 0)
+	}
+	recordAttempt2()
+	if n := count(t, `SELECT count(*) FROM review_attempts`); n != 0 {
+		t.Fatalf("shutdown recorded %d attempts", n)
 	}
 }

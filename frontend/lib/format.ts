@@ -36,3 +36,6 @@ export const one = (v: string | string[] | undefined): string => (Array.isArray(
 
 // The two cut-offs that colour a score: 90 and up is good, below 70 is bad.
 export const tone = (n: number | null | undefined) => (n === null || n === undefined ? "none" : n >= 90 ? "good" : n >= 70 ? "warn" : "bad");
+
+/** "1 commit", "2 commits": the count with its noun in the right number. */
+export const plural = (n: number, word: string, many = `${word}s`) => `${num(n)} ${n === 1 ? word : many}`;

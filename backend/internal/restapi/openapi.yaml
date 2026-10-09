@@ -389,7 +389,18 @@ components:
             tokens_in: { type: integer, format: int64 }
             tokens_out: { type: integer, format: int64 }
             cost_usd: { type: number }
-            avg_cost_usd: { type: number, nullable: true, description: Mean over measured runs }
+            avg_cost_usd: { type: number, nullable: true, description: Mean over measured runs of stored reviews }
+            wasted:
+              type: object
+              description: |
+                Attempts in the window that did not end in a stored review (failed, retried).
+                Their tokens and cost are already included in the totals above.
+              properties:
+                runs: { type: integer }
+                measured_runs: { type: integer }
+                tokens_in: { type: integer, format: int64 }
+                tokens_out: { type: integer, format: int64 }
+                cost_usd: { type: number }
         findings_by_severity: { type: object, additionalProperties: { type: integer }, description: Findings of each commit's latest review }
         queue_waiting: { type: integer }
         queue_running: { type: integer }

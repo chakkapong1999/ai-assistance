@@ -95,6 +95,7 @@ func (w *reviewPullRequestWorker) Work(ctx context.Context, job *river.Job[jobs.
 		return river.JobCancel(err)
 	}
 	if err != nil {
+		recordAttempt(ctx, w.d.Pool, subject{prID: &id}, job.Attempt, out.Usage, err, time.Since(started))
 		return w.retryOrFail(ctx, job, err)
 	}
 
@@ -107,7 +108,9 @@ func (w *reviewPullRequestWorker) Work(ctx context.Context, job *river.Job[jobs.
 	}
 	moved, err := w.save(ctx, id, p.head, out, time.Since(started))
 	if err != nil {
-		return w.retryOrFail(ctx, job, wrap("save review", err))
+		err = wrap("save review", err)
+		recordAttempt(ctx, w.d.Pool, subject{prID: &id}, job.Attempt, out.Usage, err, time.Since(started))
+		return w.retryOrFail(ctx, job, err)
 	}
 	w.d.Log.Info("pull request reviewed", "pull_request_id", id, "repo", p.workspaceSlug+"/"+p.repoSlug, "pr", p.bbID,
 		"findings", len(out.Findings), "score", out.Score, "dropped", out.Dropped, "chunks", out.Chunks, "model", out.Model)

@@ -138,6 +138,14 @@ func (d *Dashboard) Health(ctx context.Context) (Health, error) {
 	return h, nil
 }
 
+// noun picks the singular or plural form for n.
+func noun(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
 func age(sec int) string {
 	d := time.Duration(sec) * time.Second
 	if d < time.Hour {
@@ -150,16 +158,16 @@ func age(sec int) string {
 func (h *Health) problems() {
 	add := func(format string, a ...any) { h.Problems = append(h.Problems, fmt.Sprintf(format, a...)) }
 	if w := h.Webhooks; w.Unprocessed > 0 && w.OldestAgeSeconds != nil && time.Duration(*w.OldestAgeSeconds)*time.Second > healthStaleEvent {
-		add("%d webhook deliveries have waited %s without being processed. Check that the worker is running.", w.Unprocessed, age(*w.OldestAgeSeconds))
+		add("%d webhook %s waited %s without being processed. Check that the worker is running.", w.Unprocessed, noun(w.Unprocessed, "delivery has", "deliveries have"), age(*w.OldestAgeSeconds))
 	}
 	if s := h.Jobs.OldestWaitingSeconds; s != nil && time.Duration(*s)*time.Second > healthStaleJob {
 		add("A job has been waiting %s to start. Check that the worker is running.", age(*s))
 	}
 	if n := h.Stuck.Commits + h.Stuck.PullRequests; n > 0 {
-		add("%d commits or pull requests are marked as waiting but have no job. The worker queues them again on its next check.", n)
+		add("%d %s marked as waiting but %s no job. The worker queues %s again on its next check.", n, noun(n, "commit or pull request is", "commits or pull requests are"), noun(n, "has", "have"), noun(n, "it", "them"))
 	}
 	if h.Jobs.Discarded24h > 0 {
-		add("%d jobs gave up after repeated failures in the last 24 hours. Look for failed commits and pull requests.", h.Jobs.Discarded24h)
+		add("%d %s up after repeated failures in the last 24 hours. Look for failed commits and pull requests.", h.Jobs.Discarded24h, noun(h.Jobs.Discarded24h, "job gave", "jobs gave"))
 	}
 	if h.LastPoll != nil && !h.LastPoll.OK {
 		add("The last polling round failed. The worker log says why.")

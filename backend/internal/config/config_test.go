@@ -295,6 +295,27 @@ func TestBackfillSettings(t *testing.T) {
 	}
 }
 
+func TestDirectorySyncInterval(t *testing.T) {
+	load := func(v string) (Config, error) {
+		e := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t"}
+		if v != "" {
+			e["DIRECTORY_SYNC_INTERVAL"] = v
+		}
+		return Load(ModeWorker, env(e))
+	}
+	if c, err := load(""); err != nil || c.DirectoryInterval != 24*time.Hour {
+		t.Fatalf("default: %v %v", c.DirectoryInterval, err)
+	}
+	if c, err := load("12h"); err != nil || c.DirectoryInterval != 12*time.Hour {
+		t.Fatalf("parsed: %v %v", c.DirectoryInterval, err)
+	}
+	for _, v := range []string{"daily", "5m"} {
+		if _, err := load(v); err == nil {
+			t.Errorf("%q: want an error", v)
+		}
+	}
+}
+
 func TestReviewNewReposDefaultsToOnAndCanBeSwitchedOff(t *testing.T) {
 	base := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t"}
 	with := func(v string) map[string]string {

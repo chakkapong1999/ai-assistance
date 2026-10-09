@@ -74,6 +74,7 @@ export type Overview = {
     tokens_out: number;
     cost_usd: number;
     avg_cost_usd: number | null;
+    wasted: { runs: number; measured_runs: number; tokens_in: number; tokens_out: number; cost_usd: number };
   };
   queue_waiting: number;
   queue_running: number;
