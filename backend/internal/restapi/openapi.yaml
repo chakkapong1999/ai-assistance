@@ -527,6 +527,7 @@ components:
             description: { type: string }
             reviews_count: { type: integer }
             review: { allOf: [{ $ref: "#/components/schemas/Review" }], nullable: true }
+            failed_attempts: { $ref: "#/components/schemas/FailedAttempts" }
     CommitPage:
       type: object
       properties:
@@ -648,6 +649,18 @@ components:
             message: { type: string }
             reviews_count: { type: integer }
             review: { allOf: [{ $ref: "#/components/schemas/Review" }], nullable: true }
+            failed_attempts: { $ref: "#/components/schemas/FailedAttempts" }
+    FailedAttempts:
+      type: object
+      description: Review attempts that did not end in a stored review (failed, retried). Count 0 means none.
+      properties:
+        count: { type: integer }
+        measured: { type: integer, description: Attempts that reported usage }
+        tokens_in: { type: integer, format: int64 }
+        tokens_out: { type: integer, format: int64 }
+        cost_usd: { type: number }
+        last_error: { type: string, nullable: true }
+        last_at: { type: string, format: date-time, nullable: true }
     User:
       type: object
       properties:

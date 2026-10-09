@@ -164,6 +164,8 @@ type PullRequestDetail struct {
 	Description  string  `json:"description"`
 	ReviewsCount int     `json:"reviews_count"`
 	Review       *Review `json:"review"`
+
+	FailedAttempts FailedAttempts `json:"failed_attempts"`
 }
 
 func (d *Dashboard) PullRequest(ctx context.Context, id int64) (PullRequestDetail, error) {
@@ -176,6 +178,9 @@ func (d *Dashboard) PullRequest(ctx context.Context, id int64) (PullRequestDetai
 	}
 	if err != nil {
 		return pd, fmt.Errorf("pull request: %w", err)
+	}
+	if pd.FailedAttempts, err = d.failedAttemptsOf(ctx, "pr_id", id); err != nil {
+		return pd, err
 	}
 	if pd.ReviewsCount == 0 {
 		return pd, nil
