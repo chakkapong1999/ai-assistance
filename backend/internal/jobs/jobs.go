@@ -3,9 +3,11 @@
 package jobs
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 )
@@ -44,8 +46,11 @@ func (ReviewCommitArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
 		Queue:       QueueReview,
 		MaxAttempts: maxAttempts,
-		// A commit is never queued twice while a job for it is still pending.
-		UniqueOpts: river.UniqueOpts{ByArgs: true},
+		// A commit is never queued twice while a job for it is waiting or
+		// running. A finished job must not count: its row would keep the
+		// unique key and River would refuse every later job for the commit
+		// (reconcile, "Review again") without an error.
+		UniqueOpts: river.UniqueOpts{ByArgs: true, ByState: WaitingOrRunning},
 	}
 }
 
@@ -173,4 +178,16 @@ func NoLiveJobSQL(kind, key, subjectID string, respectCancel bool) string {
 // JobCountSQL is a SQL expression: how many jobs of `kind` the subject has had.
 func JobCountSQL(kind, key, subjectID string) string {
 	return fmt.Sprintf(`(SELECT count(*) FROM river_job j WHERE j.kind = '%s' AND (j.args->>'%s')::bigint = %s)`, kind, key, subjectID)
+}
+
+// ReleaseFinished frees the unique key held by finished jobs of kind for the
+// subject whose id is in args[key]. Jobs created before ReviewCommitArgs stopped
+// counting finished jobs still hold it, and would make a new insert for the
+// same subject a silent no-op. Call it in the transaction that inserts.
+func ReleaseFinished(ctx context.Context, tx pgx.Tx, kind, key string, id int64) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE river_job SET unique_key = NULL, unique_states = NULL
+		WHERE kind = $1 AND (args->>$2)::bigint = $3 AND unique_key IS NOT NULL AND state::text <> ALL($4)`,
+		kind, key, id, LiveStates())
+	return err
 }

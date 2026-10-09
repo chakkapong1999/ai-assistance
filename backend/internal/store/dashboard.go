@@ -843,6 +843,9 @@ func (d *Dashboard) Rereview(ctx context.Context, id int64) error {
 			rivertype.JobStateRetryable, rivertype.JobStateScheduled,
 		},
 	}
+	if err := jobs.ReleaseFinished(ctx, tx, "review_commit", "commit_id", id); err != nil {
+		return fmt.Errorf("enqueue: %w", err)
+	}
 	if _, err := d.river.InsertTx(ctx, tx, jobs.ReviewCommitArgs{CommitID: id}, &opts); err != nil {
 		return fmt.Errorf("enqueue: %w", err)
 	}

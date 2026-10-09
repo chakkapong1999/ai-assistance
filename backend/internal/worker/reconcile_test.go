@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"github.com/riverqueue/river"
 	"testing"
 	"time"
 
@@ -210,5 +211,38 @@ func TestReconcileQueuesPullRequestsThatLostTheirJob(t *testing.T) {
 		if got := jobsFor(t, "review_pull_request", "pull_request_id", id); got != 0 {
 			t.Errorf("%s pull request was queued (%d jobs)", name, got)
 		}
+	}
+}
+
+// A job carries a unique key. Once it has finished, a later reconcile (or
+// "Review again") must still be able to queue the commit: the finished row
+// must not hold the key. Jobs made before ReviewCommitArgs stopped counting
+// finished jobs still hold it, and are released when the commit is requeued.
+func TestReconcileRequeuesACommitWhoseEarlierJobFinished(t *testing.T) {
+	cases := map[string]*river.InsertOpts{
+		"job made by the current code": nil,
+		"job made by the old code":     {UniqueOpts: river.UniqueOpts{ByArgs: true}}, // default states include completed
+	}
+	for name, opts := range cases {
+		t.Run(name, func(t *testing.T) {
+			id := stuckCommits(t, "pending", 1)[0]
+			rc, err := NewClient(Deps{Pool: testPool, Log: quiet, Bitbucket: &fakeBB{diff: diffText}, Reviewer: blockedReviewer})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := rc.Insert(context.Background(), jobs.ReviewCommitArgs{CommitID: id}, opts); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := testPool.Exec(context.Background(),
+				`UPDATE river_job SET state = 'completed', finalized_at = now() - interval '1 hour' WHERE kind = 'review_commit'`); err != nil {
+				t.Fatal(err)
+			}
+
+			reconcileClient(t)()
+
+			if got := jobsFor(t, "review_commit", "commit_id", id); got != 2 {
+				t.Fatalf("commit has %d jobs, want 2: the finished one and a new one", got)
+			}
+		})
 	}
 }
