@@ -60,7 +60,7 @@ func (w *pollReposWorker) Work(ctx context.Context, job *river.Job[jobs.PollRepo
 		return river.JobCancel(errors.New("polling is not configured"))
 	}
 
-	repos, expandErrs := w.expand(ctx, p)
+	repos, expandErrs := expandRepos(ctx, p.Bitbucket, p.Repos)
 	if d, ok := firstSnooze(expandErrs); ok {
 		return river.JobSnooze(d)
 	}
@@ -106,7 +106,7 @@ func firstSnooze(errs []error) (time.Duration, bool) {
 // expand resolves the configured entries to repository records. A "ws/*"
 // entry lists the workspace; a repository listed there without a main branch
 // is looked up on its own.
-func (w *pollReposWorker) expand(ctx context.Context, p *PollConfig) ([]webhook.Repository, []error) {
+func expandRepos(ctx context.Context, bb PollBitbucket, entries []string) ([]webhook.Repository, []error) {
 	var out []webhook.Repository
 	var errs []error
 	seen := map[string]bool{}
@@ -116,17 +116,17 @@ func (w *pollReposWorker) expand(ctx context.Context, p *PollConfig) ([]webhook.
 			out = append(out, r)
 		}
 	}
-	for _, entry := range p.Repos {
+	for _, entry := range entries {
 		ws, slug, _ := strings.Cut(entry, "/")
 		if slug == "*" {
-			list, err := p.Bitbucket.ListWorkspaceRepositories(ctx, ws)
+			list, err := bb.ListWorkspaceRepositories(ctx, ws)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("list workspace %s: %w", ws, err))
 				continue
 			}
 			for _, r := range list {
 				if r.DefaultBranch() == "" {
-					full, err := p.Bitbucket.GetRepository(ctx, ws, r.Slug())
+					full, err := bb.GetRepository(ctx, ws, r.Slug())
 					if err != nil {
 						errs = append(errs, fmt.Errorf("repository %s: %w", r.FullName, err))
 						continue
@@ -137,7 +137,7 @@ func (w *pollReposWorker) expand(ctx context.Context, p *PollConfig) ([]webhook.
 			}
 			continue
 		}
-		r, err := p.Bitbucket.GetRepository(ctx, ws, slug)
+		r, err := bb.GetRepository(ctx, ws, slug)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("repository %s: %w", entry, err))
 			continue
@@ -166,56 +166,13 @@ func (w *pollReposWorker) pollRepo(ctx context.Context, p *PollConfig, meta webh
 		return 0, fmt.Errorf("repository %q has no workspace or slug", meta.FullName)
 	}
 
-	branches, err := p.Bitbucket.ListBranches(ctx, ws, slug)
-	if err != nil {
-		return 0, fmt.Errorf("list branches: %w", err)
-	}
 	cursors, err := w.syncer.PollCursors(ctx, meta.UUID)
 	if err != nil {
 		return 0, err
 	}
-
-	def := meta.DefaultBranch()
-	sort.SliceStable(branches, func(i, j int) bool { // main branch first: it claims shared commits
-		if (branches[i].Name == def) != (branches[j].Name == def) {
-			return branches[i].Name == def
-		}
-		return branches[i].Name < branches[j].Name
-	})
-	defHead := ""
-	for _, b := range branches {
-		if b.Name == def {
-			defHead = b.Head.Hash
-		}
-	}
-
-	heads := make(map[string]string, len(branches))
-	in := store.PushInput{Repo: meta}
-	since := time.Now().Add(-p.Lookback)
-	for _, b := range branches {
-		if b.Head.Hash == "" {
-			continue
-		}
-		heads[b.Name] = b.Head.Hash
-		last, seenBefore := cursors[b.Name]
-		if seenBefore && last == b.Head.Hash {
-			continue // nothing new; no commits request needed
-		}
-
-		exclude, from := "", since
-		switch {
-		case seenBefore:
-			exclude, from = last, time.Time{}
-		case b.Name != def && defHead != "":
-			exclude = defHead
-		}
-		commits, err := p.Bitbucket.ListRecentCommits(ctx, ws, slug, b.Head.Hash, exclude, from, ingest.MaxCommitsPerChange)
-		if err != nil {
-			return 0, fmt.Errorf("commits of %s: %w", b.Name, err)
-		}
-		if len(commits) > 0 {
-			in.Branches = append(in.Branches, store.BranchCommits{Branch: b.Name, Commits: commits})
-		}
+	in, heads, err := collectBranches(ctx, p.Bitbucket, meta, cursors, time.Now().Add(-p.Lookback), ingest.MaxCommitsPerChange)
+	if err != nil {
+		return 0, err
 	}
 
 	if len(in.Branches) == 0 && sameHeads(cursors, heads) {
@@ -245,6 +202,67 @@ func (w *pollReposWorker) pollRepo(ctx context.Context, p *PollConfig, meta webh
 		w.d.Log.Info("poll found new commits", "repo", meta.FullName, "new_commits", n, "queued", queued, "skipped", skipped)
 	}
 	return len(res.NewCommits), nil
+}
+
+// collectBranches reads what is new on every branch of one repository: for
+// each branch whose head moved since its cursor, the commits not reachable
+// from the cursor (or, with no cursor, those newer than since, and for a
+// branch other than the main one only what the main branch lacks). max caps
+// the commits read per branch. It returns the commits to store and the branch
+// heads that were seen.
+func collectBranches(ctx context.Context, bb PollBitbucket, meta webhook.Repository, cursors map[string]string, since time.Time, max int) (store.PushInput, map[string]string, error) {
+	ws := ""
+	if meta.Workspace != nil {
+		ws = meta.Workspace.Slug
+	}
+	slug := meta.Slug()
+	branches, err := bb.ListBranches(ctx, ws, slug)
+	if err != nil {
+		return store.PushInput{}, nil, fmt.Errorf("list branches: %w", err)
+	}
+
+	def := meta.DefaultBranch()
+	sort.SliceStable(branches, func(i, j int) bool { // main branch first: it claims shared commits
+		if (branches[i].Name == def) != (branches[j].Name == def) {
+			return branches[i].Name == def
+		}
+		return branches[i].Name < branches[j].Name
+	})
+	defHead := ""
+	for _, b := range branches {
+		if b.Name == def {
+			defHead = b.Head.Hash
+		}
+	}
+
+	heads := make(map[string]string, len(branches))
+	in := store.PushInput{Repo: meta}
+	for _, b := range branches {
+		if b.Head.Hash == "" {
+			continue
+		}
+		heads[b.Name] = b.Head.Hash
+		last, seenBefore := cursors[b.Name]
+		if seenBefore && last == b.Head.Hash {
+			continue // nothing new; no commits request needed
+		}
+
+		exclude, from := "", since
+		switch {
+		case seenBefore:
+			exclude, from = last, time.Time{}
+		case b.Name != def && defHead != "":
+			exclude = defHead
+		}
+		commits, err := bb.ListRecentCommits(ctx, ws, slug, b.Head.Hash, exclude, from, max)
+		if err != nil {
+			return store.PushInput{}, nil, fmt.Errorf("commits of %s: %w", b.Name, err)
+		}
+		if len(commits) > 0 {
+			in.Branches = append(in.Branches, store.BranchCommits{Branch: b.Name, Commits: commits})
+		}
+	}
+	return in, heads, nil
 }
 
 func sameHeads(a, b map[string]string) bool {

@@ -132,6 +132,17 @@ A repository is created automatically the first time the worker sees it (a webho
 - Repositories that already exist keep their current setting; changing the variable affects only repositories created afterwards.
 - Commits that arrived while a repository had review off stay *skipped*; use **Review again** on them if you want them reviewed.
 
+## Importing history (`--mode=backfill`)
+
+Polling only reads recent commits (`POLL_LOOKBACK`). To fill the dashboard with older history, run once:
+
+```sh
+cd backend
+POLL_REPOS='acme/*' BACKFILL_DAYS=180 go run ./cmd/server --mode=backfill   # DATABASE_URL and BITBUCKET_TOKEN as for the worker
+```
+
+It reads every branch of the `POLL_REPOS` repositories back `BACKFILL_DAYS` (default 90, newest first, at most `BACKFILL_MAX_COMMITS` per branch) and stores the commits and their authors. The commits are marked **skipped, "history, not reviewed"**, so nothing is sent to the LLM and nothing is spent; set `BACKFILL_REVIEW=true` to queue reviews instead (only for repositories with review on, and the worker has to be running to do them). It is safe to run again or while the worker runs: stored commits are left alone, and a branch the poller already follows keeps its cursor. It exits non-zero if a repository could not be read, after finishing the others.
+
 ## Who is who: roles, permissions and profiles
 
 Once a day (`DIRECTORY_SYNC_INTERVAL`, default `24h`, minimum `1h`) and when the worker starts, it reads from Bitbucket:

@@ -264,6 +264,37 @@ func TestReconcileInterval(t *testing.T) {
 	}
 }
 
+func TestBackfillSettings(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t", "POLL_REPOS": "acme/*"}
+	with := func(kv ...string) map[string]string {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return m
+	}
+	c, err := Load(ModeBackfill, env(with()))
+	if err != nil || c.BackfillDays != 90 || c.BackfillMaxCommits != 2000 || c.BackfillReview {
+		t.Fatalf("defaults: %+v %v", c, err)
+	}
+	c, err = Load(ModeBackfill, env(with("BACKFILL_DAYS", "365", "BACKFILL_MAX_COMMITS", "50", "BACKFILL_REVIEW", "true")))
+	if err != nil || c.BackfillDays != 365 || c.BackfillMaxCommits != 50 || !c.BackfillReview {
+		t.Fatalf("parsed: %+v %v", c, err)
+	}
+	for _, kv := range [][]string{{"BACKFILL_DAYS", "0"}, {"BACKFILL_DAYS", "4000"}, {"BACKFILL_MAX_COMMITS", "x"}, {"BACKFILL_REVIEW", "maybe"}} {
+		if _, err := Load(ModeBackfill, env(with(kv...))); err == nil {
+			t.Errorf("%v: want an error", kv)
+		}
+	}
+	noRepos := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t"}
+	if _, err := Load(ModeBackfill, env(noRepos)); err == nil || !strings.Contains(err.Error(), "POLL_REPOS") {
+		t.Errorf("backfill without POLL_REPOS: %v", err)
+	}
+}
+
 func TestDirectorySyncInterval(t *testing.T) {
 	load := func(v string) (Config, error) {
 		e := map[string]string{"DATABASE_URL": "postgres://x", "BITBUCKET_TOKEN": "t"}
