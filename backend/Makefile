@@ -29,6 +29,9 @@ run-api:
 run-worker:
 	@$(LOADENV) DATABASE_URL="$${DATABASE_URL:-$(DATABASE_URL)}" go run ./cmd/server --mode=worker
 
+run-backfill:
+	@$(LOADENV) DATABASE_URL="$${DATABASE_URL:-$(DATABASE_URL)}" go run ./cmd/server --mode=backfill
+
 test:
 	go test ./...
 
