@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -46,7 +47,7 @@ func main() {
 	case config.ModeWorker:
 		err = runWorker(ctx, log, cfg)
 	case config.ModeBackfill:
-		log.Info("backfill is not implemented yet (M2)")
+		err = runBackfill(ctx, log, cfg)
 	}
 	if err != nil {
 		log.Error("exited with error", "error", err)
@@ -156,5 +157,39 @@ func runWorker(ctx context.Context, log *slog.Logger, cfg config.Config) error {
 		}
 	}
 	log.Info("worker stopped")
+	return nil
+}
+
+// runBackfill reads the history of the POLL_REPOS repositories once and exits.
+func runBackfill(ctx context.Context, log *slog.Logger, cfg config.Config) error {
+	pool, err := store.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if err := store.CheckSchema(ctx, pool); err != nil {
+		return err
+	}
+	bb, err := bitbucket.New(bitbucket.Options{Token: cfg.BitbucketToken, BaseURL: cfg.BitbucketBaseURL})
+	if err != nil {
+		return err
+	}
+	// Insert-only: the worker, not this process, runs any review that is queued.
+	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		return err
+	}
+	log.Info("backfill started", "repos", cfg.PollRepos, "days", cfg.BackfillDays, "max_per_branch", cfg.BackfillMaxCommits, "review", cfg.BackfillReview)
+	res, err := worker.Backfill(ctx, log, pool, bb, rc, worker.BackfillOptions{
+		Repos: cfg.PollRepos, Days: cfg.BackfillDays, MaxPerBranch: cfg.BackfillMaxCommits,
+		Review: cfg.BackfillReview, ReviewNewRepos: cfg.ReviewNewRepos,
+	})
+	log.Info("backfill finished", "repositories", res.Repositories, "failed", res.Failed, "new_commits", res.NewCommits, "queued", res.Queued, "skipped", res.Skipped)
+	if err != nil {
+		return err
+	}
+	if res.Failed > 0 {
+		return fmt.Errorf("%d repositories could not be backfilled; run it again after fixing them", res.Failed)
+	}
 	return nil
 }

@@ -100,9 +100,17 @@ func settleNewCommits(ctx context.Context, tx pgx.Tx, res store.PushResult) (que
 	if err != nil {
 		return 0, 0, wrap("river client", err)
 	}
+	return settleWith(ctx, tx, rc, res, "")
+}
+
+// settleWith is settleNewCommits with the River client given, and with an
+// optional reason that skips every commit (a backfill of old history).
+func settleWith(ctx context.Context, tx pgx.Tx, rc *river.Client[pgx.Tx], res store.PushResult, skipAll string) (queued, skipped int, err error) {
 	for _, c := range res.NewCommits {
 		reason := ""
 		switch {
+		case skipAll != "":
+			reason = skipAll
 		case !res.ReviewEnabled:
 			reason = skipRepoDisabled
 		case c.IsMerge:

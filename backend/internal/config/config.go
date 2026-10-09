@@ -63,6 +63,11 @@ type Config struct {
 	// job and queues it again.
 	ReconcileInterval time.Duration
 
+	// Backfill (mode backfill): which repositories come from POLL_REPOS.
+	BackfillDays       int  // how far back to read, default 90
+	BackfillMaxCommits int  // per branch, default 2000
+	BackfillReview     bool // queue reviews for what is found; default off
+
 	// ReviewNewRepos: a repository first seen by the worker starts with review
 	// on (default) or off. It only decides the starting value; an admin's later
 	// choice in the dashboard is never overwritten.
@@ -217,6 +222,29 @@ func Load(mode string, getenv func(string) string) (Config, error) {
 			c.ReviewNewRepos = b
 		}
 	}
+	c.BackfillDays, c.BackfillMaxCommits = 90, 2000
+	for _, n := range []struct {
+		key      string
+		dst      *int
+		min, max int
+	}{{"BACKFILL_DAYS", &c.BackfillDays, 1, 3650}, {"BACKFILL_MAX_COMMITS", &c.BackfillMaxCommits, 1, 50000}} {
+		if v := get(n.key, ""); v != "" {
+			x, err := strconv.Atoi(v)
+			if err != nil || x < n.min || x > n.max {
+				errs = append(errs, fmt.Errorf("%s must be a whole number from %d to %d", n.key, n.min, n.max))
+			} else {
+				*n.dst = x
+			}
+		}
+	}
+	if v := get("BACKFILL_REVIEW", ""); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("BACKFILL_REVIEW: %q is not true or false", v))
+		} else {
+			c.BackfillReview = b
+		}
+	}
 	if d := get("MOCK_REVIEW_DELAY", "0s"); d != "" {
 		parsed, err := time.ParseDuration(d)
 		switch {
@@ -280,6 +308,9 @@ func (c Config) validate() []error {
 	case ModeWorker, ModeBackfill:
 		need("DATABASE_URL", c.DatabaseURL)
 		need("BITBUCKET_TOKEN", c.BitbucketToken)
+		if c.Mode == ModeBackfill && len(c.PollRepos) == 0 {
+			errs = append(errs, errors.New("POLL_REPOS is required in backfill mode: it names the repositories to read"))
+		}
 	default:
 		errs = append(errs, fmt.Errorf("unknown mode %q (want api, worker or backfill)", c.Mode))
 	}
