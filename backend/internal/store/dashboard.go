@@ -82,9 +82,21 @@ type DayPoint struct {
 	CostUSD  float64  `json:"cost_usd"`
 }
 
+// Wasted is what review attempts cost that did not end in a stored review
+// (failed, retried, unparseable answers).
+type Wasted struct {
+	Runs      int     `json:"runs"`
+	Measured  int     `json:"measured_runs"`
+	TokensIn  int64   `json:"tokens_in"`
+	TokensOut int64   `json:"tokens_out"`
+	CostUSD   float64 `json:"cost_usd"`
+}
+
 // Usage totals every review *run* in the window, re-reviews included (money
 // is spent per run, not per commit). Reviews that reported nothing (mock)
-// count in Runs but add nothing to the sums.
+// count in Runs but add nothing to the sums. Runs, Measured and AvgCostUSD
+// describe stored reviews only; tokens and CostUSD also include Wasted, the
+// attempts that failed.
 type Usage struct {
 	Runs       int      `json:"runs"`
 	Measured   int      `json:"measured_runs"`
@@ -92,6 +104,7 @@ type Usage struct {
 	TokensOut  int64    `json:"tokens_out"`
 	CostUSD    float64  `json:"cost_usd"`
 	AvgCostUSD *float64 `json:"avg_cost_usd"`
+	Wasted     Wasted   `json:"wasted"`
 }
 
 type Overview struct {
@@ -218,11 +231,24 @@ func (d *Dashboard) Overview(ctx context.Context, days int) (Overview, error) {
 		Scan(&o.Usage.Runs, &o.Usage.Measured, &o.Usage.TokensIn, &o.Usage.TokensOut, &o.Usage.CostUSD, &o.Usage.AvgCostUSD); err != nil {
 		return o, fmt.Errorf("usage: %w", err)
 	}
+	w := &o.Usage.Wasted
+	if err := d.pool.QueryRow(ctx, `
+		SELECT count(*), count(cost_usd),
+		       COALESCE(sum(tokens_in), 0)::bigint, COALESCE(sum(tokens_out), 0)::bigint,
+		       COALESCE(sum(cost_usd), 0)::float8
+		FROM review_attempts WHERE created_at >= $1`, since).
+		Scan(&w.Runs, &w.Measured, &w.TokensIn, &w.TokensOut, &w.CostUSD); err != nil {
+		return o, fmt.Errorf("wasted usage: %w", err)
+	}
+	o.Usage.TokensIn += w.TokensIn
+	o.Usage.TokensOut += w.TokensOut
+	o.Usage.CostUSD += w.CostUSD
 
 	costByDay := map[string]float64{}
 	crows, err := d.pool.Query(ctx, `
 		SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'), COALESCE(sum(cost_usd), 0)::float8
-		FROM reviews WHERE created_at >= $1 GROUP BY 1`, since)
+		FROM (SELECT created_at, cost_usd FROM reviews UNION ALL SELECT created_at, cost_usd FROM review_attempts) u
+		WHERE created_at >= $1 GROUP BY 1`, since)
 	if err != nil {
 		return o, fmt.Errorf("daily cost: %w", err)
 	}

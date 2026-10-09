@@ -233,6 +233,15 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <dl className="ledger">
               <dt>Review cost</dt>
               <dd>{usd(u.cost_usd)}</dd>
+              {u.wasted.runs > 0 ? (
+                <>
+                  <dt>Failed attempts</dt>
+                  <dd>
+                    {u.wasted.measured_runs > 0 ? `${usd(u.wasted.cost_usd)} in ` : ""}
+                    {plural(u.wasted.runs, "attempt")}, included above
+                  </dd>
+                </>
+              ) : null}
               <dt>Cost per run</dt>
               <dd>{u.avg_cost_usd !== null ? usd(u.avg_cost_usd) : "not measured"}</dd>
               <dt>Tokens in / out</dt>

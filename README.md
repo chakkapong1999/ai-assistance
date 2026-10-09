@@ -107,7 +107,7 @@ Next.js (server components, no client-side data fetching): the browser only rece
 
 | Page | Shows |
 | --- | --- |
-| `/` Overview | commits, average score, review cost and tokens, queue, findings by severity, per-day charts (7 / 30 / 90 days) |
+| `/` Overview | commits, average score, review cost and tokens (failed and retried attempts included, shown separately), queue, findings by severity, per-day charts (7 / 30 / 90 days) |
 | `/commits` | every commit, newest first, filter by text, repository, status, branch, author; older pages via cursor |
 | `/commits/{id}` | latest review: summary, findings by severity, suggested changes as diffs, tokens and cost of the run; **Review again** (admin token) |
 | `/pull-requests`, `/pull-requests/{id}` | pull requests with the review of their whole diff, state (open / merged / ...), an "outdated" hint when the branch has new commits; **Review again** (admin token, open PRs only) |
@@ -184,3 +184,7 @@ Besides each commit, the worker reviews every **open pull request as one diff** 
 ## Paging
 
 The commit and pull request lists show page numbers (`?page=3&size=25`; 10, 25, 50 or 100 rows, 10 by default) and the total of matching rows. The API takes `offset` and returns `total`; `cursor` still works for clients that walk the whole list while new rows arrive, but the two cannot be combined.
+
+## Cost of failed attempts
+
+A review call that is thrown away (unusable answer, a later chunk failing after earlier ones were paid for, a failed save) still costs money. Each such attempt is stored in `review_attempts` (migration 0006, run `make migrate`) with the usage the reviewer reported, and the overview adds it to the totals and shows it as "Failed attempts". "Cost per run" stays the mean of stored reviews. Shutdowns and provider limits that cost nothing are not recorded.

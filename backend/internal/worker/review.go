@@ -89,6 +89,7 @@ func (w *reviewCommitWorker) Work(ctx context.Context, job *river.Job[jobs.Revie
 		return river.JobCancel(err)
 	}
 	if err != nil {
+		recordAttempt(ctx, w.d.Pool, subject{commitID: &id}, job.Attempt, out.Usage, err, time.Since(started))
 		return w.retryOrFail(ctx, job, err)
 	}
 
@@ -99,7 +100,9 @@ func (w *reviewCommitWorker) Work(ctx context.Context, job *river.Job[jobs.Revie
 		return w.settle(ctx, id, "skipped", skipReason(out))
 	}
 	if err := w.save(ctx, id, out, time.Since(started)); err != nil {
-		return w.retryOrFail(ctx, job, wrap("save review", err))
+		err = wrap("save review", err)
+		recordAttempt(ctx, w.d.Pool, subject{commitID: &id}, job.Attempt, out.Usage, err, time.Since(started))
+		return w.retryOrFail(ctx, job, err)
 	}
 	w.d.Log.Info("commit reviewed", "commit_id", id, "hash", c.hash, "findings", len(out.Findings),
 		"score", out.Score, "dropped", out.Dropped, "chunks", out.Chunks, "model", out.Model)
