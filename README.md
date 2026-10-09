@@ -130,6 +130,16 @@ A repository is created automatically the first time the worker sees it (a webho
 - Repositories that already exist keep their current setting; changing the variable affects only repositories created afterwards.
 - Commits that arrived while a repository had review off stay *skipped*; use **Review again** on them if you want them reviewed.
 
+## Who is who: roles, permissions and profiles
+
+Once a day (`DIRECTORY_SYNC_INTERVAL`, default `24h`, minimum `1h`) and when the worker starts, it reads from Bitbucket:
+
+- each workspace's members and their role (`workspace_members`),
+- each repository's explicit user permissions (`repo_permissions`: admin, write, read),
+- the profile (name, nickname, avatar) of every account not refreshed in the last 24 hours.
+
+People who left are removed from the role and permission tables but never from `users`, so old commits keep their author. An empty answer changes nothing, and a workspace or repository the token may not read is skipped with a warning in the worker log (reading permissions needs an admin-level token). The worker keeps working when the sync fails.
+
 ## Health and self-repair
 
 Jobs can be lost (a database restore, a queue purge, a crash between two writes). The worker therefore checks every `RECONCILE_INTERVAL` (default 5m, min 1m; it also runs once at start):

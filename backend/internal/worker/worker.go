@@ -48,6 +48,9 @@ type Deps struct {
 	// queue it again. Zero turns reconciling off (tests); the server always sets it.
 	ReconcileInterval time.Duration
 
+	// Directory turns on the periodic sync of roles, permissions and profiles (nil = off).
+	Directory *DirectoryConfig
+
 	WebhookWorkers int           // default 4
 	PollInterval   time.Duration // how often idle queues look for jobs; default River's (1s)
 }
@@ -83,12 +86,20 @@ func NewClient(d Deps) (*river.Client[pgx.Tx], error) {
 	river.AddWorker(workers, &pollReposWorker{d: d, syncer: store.NewSyncer(d.Pool).ReviewNewRepos(d.ReviewNewRepos)})
 
 	river.AddWorker(workers, &reconcileWorker{d: d})
+	river.AddWorker(workers, &syncDirectoryWorker{d: d, syncer: store.NewSyncer(d.Pool)})
 
 	var periodic []*river.PeriodicJob
 	if d.ReconcileInterval > 0 {
 		periodic = append(periodic, river.NewPeriodicJob(
 			river.PeriodicInterval(d.ReconcileInterval),
 			func() (river.JobArgs, *river.InsertOpts) { return jobs.ReconcileArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: true},
+		))
+	}
+	if d.Directory.enabled() {
+		periodic = append(periodic, river.NewPeriodicJob(
+			river.PeriodicInterval(d.Directory.Interval),
+			func() (river.JobArgs, *river.InsertOpts) { return jobs.SyncDirectoryArgs{}, nil },
 			&river.PeriodicJobOpts{RunOnStart: true},
 		))
 	}
