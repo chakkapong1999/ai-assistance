@@ -2,7 +2,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import type { Severity } from "@/lib/api";
 import { guard } from "@/lib/guard";
-import { ago, compact, intParam, num, usd } from "@/lib/format";
+import { ago, compact, intParam, num, usd, plural } from "@/lib/format";
 import BarChart from "@/components/BarChart";
 import Score from "@/components/Score";
 import Window from "@/components/Window";
@@ -10,7 +10,6 @@ import Window from "@/components/Window";
 export const metadata = { title: "Overview" };
 
 const sevs: Severity[] = ["critical", "major", "minor", "info"];
-const plural = (n: number, word: string) => `${num(n)} ${n === 1 ? word : `${word}s`}`;
 
 export default async function Overview({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const days = intParam((await searchParams).days, 30, 1, 365);
@@ -96,17 +95,19 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <div>
               <dt>Waiting for the author</dt>
               <dd>{num(o.fix.open_findings)}</dd>
-              <span>findings still open</span>
+              <span>{o.fix.open_findings === 1 ? "finding" : "findings"} still open</span>
             </div>
             <div>
               <dt>Waiting for a reviewer</dt>
               <dd>{num(o.fix.reviews_ready_to_close)}</dd>
-              <span>reviews ready to close ({num(o.fix.fixed_findings)} fixed findings)</span>
+              <span>
+                {o.fix.reviews_ready_to_close === 1 ? "review" : "reviews"} ready to close ({plural(o.fix.fixed_findings, "fixed finding")})
+              </span>
             </div>
             <div>
               <dt>Closed</dt>
               <dd>{num(o.fix.reviews_closed)}</dd>
-              <span>reviews</span>
+              <span>{o.fix.reviews_closed === 1 ? "review" : "reviews"}</span>
             </div>
           </dl>
         </section>

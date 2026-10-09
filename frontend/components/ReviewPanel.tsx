@@ -150,7 +150,7 @@ export default function ReviewPanel({
   const canReview = reviewer && !isAuthor; // nobody reviews their own work
   const closed = r.closed;
   const open = r.findings.filter((f) => f.status === "open").length;
-  const counts = order.map((s) => [s, r.findings.filter((f) => f.severity === s).length] as const).filter(([, n]) => n > 0);
+  const counts = order.map((s) => [s, shown.filter((f) => f.severity === s).length] as const).filter(([, n]) => n > 0);
 
   return (
     <>
@@ -329,6 +329,11 @@ export default function ReviewPanel({
 
           <nav className="outline" aria-label="Findings in this review">
             <h2>Outline</h2>
+            {filtered ? (
+              <p className="muted">
+                {shown.length} of {r.findings.length} shown
+              </p>
+            ) : null}
             <div className="counts">
               {counts.map(([s, n]) => (
                 <span key={s} className={`sev sev-${s}`}>
