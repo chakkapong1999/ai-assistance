@@ -132,6 +132,9 @@ func requeueCommits(ctx context.Context, tx pgx.Tx, rc *river.Client[pgx.Tx]) (q
 			gaveUp++
 		default:
 			if err = setCommit(ctx, tx, c.id, "pending", ""); err == nil {
+				err = jobs.ReleaseFinished(ctx, tx, "review_commit", "commit_id", c.id)
+			}
+			if err == nil {
 				_, err = rc.InsertTx(ctx, tx, jobs.ReviewCommitArgs{CommitID: c.id}, reinsertOpts(jobs.ReviewCommitArgs{}.InsertOpts()))
 			}
 			queued++
