@@ -127,10 +127,14 @@ func (c *ClaudeCLI) Review(ctx context.Context, req Request) (Result, error) {
 
 	if rr.ExitCode != 0 || (envErr == nil && env.IsError) {
 		text := env.Result + "\n" + string(rr.Stderr) + "\n" + string(rr.Stdout)
-		if ule, ok := ClassifyUsageLimit(text, c.now()); ok {
-			return Result{}, ule
+		var spent Usage
+		if envErr == nil {
+			spent = env.usage()
 		}
-		return Result{}, fmt.Errorf("review: claude exited %d: %s", rr.ExitCode, cliFailureDetail(env, envErr, rr))
+		if ule, ok := ClassifyUsageLimit(text, c.now()); ok {
+			return Result{Usage: spent}, ule
+		}
+		return Result{Usage: spent}, fmt.Errorf("review: claude exited %d: %s", rr.ExitCode, cliFailureDetail(env, envErr, rr))
 	}
 	if envErr != nil {
 		return Result{}, fmt.Errorf("%w: CLI output is not JSON: %v", ErrInvalidOutput, envErr)
@@ -138,7 +142,8 @@ func (c *ClaudeCLI) Review(ctx context.Context, req Request) (Result, error) {
 
 	res, err := ParseOutput([]byte(env.Result))
 	if err != nil {
-		return Result{}, err
+		// The call was made and paid for even though its answer is unusable.
+		return Result{Usage: env.usage()}, err
 	}
 	res.Model = ModelClaudeCLI
 	res.Usage = env.usage()

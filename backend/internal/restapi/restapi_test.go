@@ -786,6 +786,33 @@ func TestOverviewUsage(t *testing.T) {
 		t.Errorf("with an unmeasured run = %+v", o.Usage)
 	}
 
+	// Failed attempts add to the totals and are reported on their own; the
+	// per-run average stays about stored reviews.
+	exec(t, `INSERT INTO review_attempts (commit_id, attempt, error, tokens_in, tokens_out, cost_usd) VALUES
+	         ($1, 1, 'bad json', 500, 50, 0.5), ($1, 2, 'killed', NULL, NULL, NULL)`, e.ids["c1"])
+	exec(t, `INSERT INTO review_attempts (commit_id, attempt, error, tokens_in, tokens_out, cost_usd, created_at)
+	         VALUES ($1, 1, 'old', 7, 7, 7, now() - interval '3 days')`, e.ids["c1"])
+	var w struct {
+		Usage struct {
+			CostUSD float64 `json:"cost_usd"`
+			Avg     float64 `json:"avg_cost_usd"`
+			Wasted  struct {
+				Runs     int     `json:"runs"`
+				Measured int     `json:"measured_runs"`
+				CostUSD  float64 `json:"cost_usd"`
+				TokensIn int64   `json:"tokens_in"`
+			} `json:"wasted"`
+		} `json:"usage"`
+		Series []struct {
+			Cost float64 `json:"cost_usd"`
+		} `json:"series"`
+	}
+	e.get(t, "/api/v1/overview?days=1", &w)
+	if w.Usage.Wasted.Runs != 2 || w.Usage.Wasted.Measured != 1 || w.Usage.Wasted.CostUSD != 0.5 || w.Usage.Wasted.TokensIn != 500 ||
+		w.Usage.CostUSD != 0.75 || w.Usage.Avg != 0.25 || len(w.Series) != 1 || w.Series[0].Cost != 0.75 {
+		t.Errorf("with failed attempts = %+v", w)
+	}
+
 	// The commit detail shows the run's own numbers, null when unmeasured.
 	var d struct {
 		Review struct {

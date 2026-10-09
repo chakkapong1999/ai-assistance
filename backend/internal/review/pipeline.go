@@ -83,16 +83,18 @@ func Run(ctx context.Context, rv Reviewer, in Input, lim Limits) (Outcome, error
 	var summaries []string
 	for i, ch := range chunks {
 		if err := ctx.Err(); err != nil {
-			return Outcome{}, err
+			return Outcome{Usage: out.Usage}, err
 		}
 		res, err := rv.Review(ctx, Request{
 			Repo: in.Repo, Commit: in.Commit, Message: in.Message, Author: in.Author, PullRequest: in.PullRequest, Chunk: ch,
 		})
+		out.Usage = out.Usage.Add(res.Usage) // a failed call can still have been paid for
 		if err != nil {
-			return Outcome{}, fmt.Errorf("chunk %d/%d: %w", i+1, len(chunks), err)
+			// Only Usage is meaningful on error: what the chunks so far, and
+			// this one, cost, so the caller can account for the wasted attempt.
+			return Outcome{Usage: out.Usage}, fmt.Errorf("chunk %d/%d: %w", i+1, len(chunks), err)
 		}
 		res, dropped := Sanitize(res, ch)
-		out.Usage = out.Usage.Add(res.Usage)
 		out.Dropped += dropped
 		out.Findings = append(out.Findings, res.Findings...)
 		if res.Summary != "" {
