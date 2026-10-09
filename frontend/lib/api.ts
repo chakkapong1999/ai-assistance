@@ -161,9 +161,20 @@ export type FindingStatus = "open" | "fixed" | "dismissed";
 export type Role = "viewer" | "author" | "senior" | "lead" | "admin";
 export type Me = { role: Role; user: { id: number; name: string } | null };
 
+export type FailedAttempts = {
+  count: number;
+  measured: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd: number;
+  last_error: string | null;
+  last_at: string | null;
+};
+
 export type CommitDetail = CommitSummary & {
   message: string;
   reviews_count: number;
+  failed_attempts: FailedAttempts;
   review: {
     id: number;
     model: string;
@@ -209,6 +220,7 @@ export type PullRequestSummary = {
 export type PullRequestDetail = PullRequestSummary & {
   description: string;
   reviews_count: number;
+  failed_attempts: FailedAttempts;
   review: CommitDetail["review"];
 };
 

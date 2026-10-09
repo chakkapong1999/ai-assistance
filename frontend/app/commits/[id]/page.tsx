@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { dateTime, one } from "@/lib/format";
+import FailedAttemptsNote from "@/components/FailedAttemptsNote";
 import ReviewPanel from "@/components/ReviewPanel";
 import { DiffStat, StatusBadge } from "@/components/badges";
 import { rereview } from "../actions";
@@ -61,6 +62,8 @@ export default async function CommitPage({ params, searchParams }: { params: Pro
       </header>
 
       {c.message.trim().includes("\n") ? <div className="body-text">{c.message}</div> : null}
+
+      <FailedAttemptsNote attempts={c.failed_attempts} />
 
       {!r ? (
         <div className="empty" style={{ marginTop: 24 }}>

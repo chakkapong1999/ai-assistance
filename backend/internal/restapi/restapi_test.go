@@ -1141,3 +1141,33 @@ func TestAdminTokenWithoutUserRunsTheWholeWorkflow(t *testing.T) {
 		t.Errorf("linked admin on own work = %d %s", code, body)
 	}
 }
+
+func TestDetailShowsFailedAttempts(t *testing.T) {
+	e := setup(t)
+	type fa struct {
+		FailedAttempts struct {
+			Count     int     `json:"count"`
+			Measured  int     `json:"measured"`
+			TokensIn  int64   `json:"tokens_in"`
+			CostUSD   float64 `json:"cost_usd"`
+			LastError *string `json:"last_error"`
+		} `json:"failed_attempts"`
+	}
+	var d fa
+	e.get(t, "/api/v1/commits/"+itoa(e.ids["c1"]), &d)
+	if d.FailedAttempts.Count != 0 || d.FailedAttempts.LastError != nil {
+		t.Fatalf("no attempts yet: %+v", d.FailedAttempts)
+	}
+	exec(t, `INSERT INTO review_attempts (commit_id, attempt, error, tokens_in, tokens_out, cost_usd, created_at) VALUES
+	         ($1, 1, 'first', 100, 10, 0.1, now() - interval '1 hour'), ($1, 2, 'second', NULL, NULL, NULL, now())`, e.ids["c1"])
+	d = fa{}
+	e.get(t, "/api/v1/commits/"+itoa(e.ids["c1"]), &d)
+	f := d.FailedAttempts
+	if f.Count != 2 || f.Measured != 1 || f.TokensIn != 100 || f.CostUSD != 0.1 || f.LastError == nil || *f.LastError != "second" {
+		t.Errorf("commit failed attempts = %+v", f)
+	}
+	e.get(t, "/api/v1/commits/"+itoa(e.ids["c2"]), &d)
+	if d.FailedAttempts.Count != 0 {
+		t.Errorf("attempts leaked to another commit: %+v", d.FailedAttempts)
+	}
+}

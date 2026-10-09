@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { dateTime, one } from "@/lib/format";
+import FailedAttemptsNote from "@/components/FailedAttemptsNote";
 import ReviewPanel from "@/components/ReviewPanel";
 import { DiffStat, PRStateBadge, StatusBadge } from "@/components/badges";
 import { rereviewPullRequest } from "../actions";
@@ -67,6 +68,8 @@ export default async function PullRequestPage({ params, searchParams }: { params
       </header>
 
       {p.description ? <div className="body-text">{p.description}</div> : null}
+
+      <FailedAttemptsNote attempts={p.failed_attempts} />
 
       {!r ? (
         <div className="empty" style={{ marginTop: 24 }}>

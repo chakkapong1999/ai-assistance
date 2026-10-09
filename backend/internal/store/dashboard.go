@@ -625,11 +625,40 @@ type Review struct {
 	Findings      []Finding     `json:"findings"`
 }
 
+// FailedAttempts is what the review attempts of one commit or pull request
+// that did not end in a stored review cost. Count 0 means none.
+type FailedAttempts struct {
+	Count     int        `json:"count"`
+	Measured  int        `json:"measured"`
+	TokensIn  int64      `json:"tokens_in"`
+	TokensOut int64      `json:"tokens_out"`
+	CostUSD   float64    `json:"cost_usd"`
+	LastError *string    `json:"last_error"`
+	LastAt    *time.Time `json:"last_at"`
+}
+
+// failedAttemptsOf sums review_attempts of a commit (col = "commit_id") or a
+// pull request (col = "pr_id"). col is never user input.
+func (d *Dashboard) failedAttemptsOf(ctx context.Context, col string, id int64) (FailedAttempts, error) {
+	var f FailedAttempts
+	err := d.pool.QueryRow(ctx, `
+		SELECT count(*)::int, count(cost_usd)::int,
+		       COALESCE(sum(tokens_in), 0)::bigint, COALESCE(sum(tokens_out), 0)::bigint, COALESCE(sum(cost_usd), 0)::float8,
+		       (array_agg(error ORDER BY created_at DESC, id DESC))[1], max(created_at)
+		FROM review_attempts WHERE `+col+` = $1`, id).
+		Scan(&f.Count, &f.Measured, &f.TokensIn, &f.TokensOut, &f.CostUSD, &f.LastError, &f.LastAt)
+	if err != nil {
+		return f, fmt.Errorf("failed attempts: %w", err)
+	}
+	return f, nil
+}
+
 type CommitDetail struct {
 	CommitSummary
-	Message      string  `json:"message"`
-	ReviewsCount int     `json:"reviews_count"`
-	Review       *Review `json:"review"`
+	Message        string         `json:"message"`
+	ReviewsCount   int            `json:"reviews_count"`
+	Review         *Review        `json:"review"`
+	FailedAttempts FailedAttempts `json:"failed_attempts"`
 }
 
 func (d *Dashboard) Commit(ctx context.Context, id int64) (CommitDetail, error) {
@@ -642,6 +671,9 @@ func (d *Dashboard) Commit(ctx context.Context, id int64) (CommitDetail, error) 
 	}
 	if err != nil {
 		return cd, fmt.Errorf("commit: %w", err)
+	}
+	if cd.FailedAttempts, err = d.failedAttemptsOf(ctx, "commit_id", id); err != nil {
+		return cd, err
 	}
 	if cd.ReviewsCount == 0 {
 		return cd, nil

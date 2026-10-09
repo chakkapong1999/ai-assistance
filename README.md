@@ -18,6 +18,8 @@ make migrate-river  # River's job-queue schema (needs Go; River owns these table
 make run-api        # refuses to start if either step above was skipped
 ```
 
+CI (`.github/workflows/ci.yml`) runs gofmt, `go vet`, `go test -race` against Postgres, and the frontend type check and tests on every pull request.
+
 Frontend unit tests (paging, finding filters, formatting) run with `npm test` in `frontend/` (Node 22.18 or newer, no extra packages).
 
 Integration tests that need Postgres run only when `TEST_DATABASE_URL` is set
@@ -151,7 +153,7 @@ Once a day (`DIRECTORY_SYNC_INTERVAL`, default `24h`, minimum `1h`) and when the
 - each repository's explicit user permissions (`repo_permissions`: admin, write, read),
 - the profile (name, nickname, avatar) of every account not refreshed in the last 24 hours.
 
-People who left are removed from the role and permission tables but never from `users`, so old commits keep their author. An empty answer changes nothing, and a workspace or repository the token may not read is skipped with a warning in the worker log (reading permissions needs an admin-level token). The worker keeps working when the sync fails.
+People who left are removed from the role and permission tables but never from `users`, so old commits keep their author. An empty answer changes nothing, and a workspace or repository the token may not read is skipped with a warning in the worker log (reading permissions needs an admin-level token). The worker keeps working when the sync fails. Places the token may not read are reported in one warning per pass (names at debug level).
 
 ## Health and self-repair
 
@@ -210,4 +212,4 @@ The commit and pull request lists show page numbers (`?page=3&size=25`; 10, 25, 
 
 ## Cost of failed attempts
 
-A review call that is thrown away (unusable answer, a later chunk failing after earlier ones were paid for, a failed save) still costs money. Each such attempt is stored in `review_attempts` (migration 0006, run `make migrate`) with the usage the reviewer reported, and the overview adds it to the totals and shows it as "Failed attempts". "Cost per run" stays the mean of stored reviews. Shutdowns and provider limits that cost nothing are not recorded.
+A review call that is thrown away (unusable answer, a later chunk failing after earlier ones were paid for, a failed save) still costs money. Each such attempt is stored in `review_attempts` (migration 0006, run `make migrate`) with the usage the reviewer reported, and the overview adds it to the totals and shows it as "Failed attempts". "Cost per run" stays the mean of stored reviews. Shutdowns and provider limits that cost nothing are not recorded. A commit or pull request with failed attempts shows a line about them on its detail page (`failed_attempts` in the API).

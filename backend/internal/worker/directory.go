@@ -72,6 +72,7 @@ func (w *syncDirectoryWorker) Work(ctx context.Context, job *river.Job[jobs.Sync
 	}
 	log := w.d.Log
 	var members, permissions, profiles, skipped int
+	var denied []string // places the token may not read; reported once per pass
 	handle := func(what string, err error) (stop error) {
 		switch {
 		case err == nil:
@@ -85,7 +86,8 @@ func (w *syncDirectoryWorker) Work(ctx context.Context, job *river.Job[jobs.Sync
 		}
 		if noAccess(err) {
 			skipped++
-			log.Warn("directory sync cannot read "+what, "error", err)
+			denied = append(denied, what)
+			log.Debug("directory sync cannot read "+what, "error", err)
 			return nil
 		}
 		skipped++
@@ -168,6 +170,12 @@ func (w *syncDirectoryWorker) Work(ctx context.Context, job *river.Job[jobs.Sync
 			return wrap("save profile", err)
 		}
 		profiles++
+	}
+	if len(denied) > 0 {
+		// One line instead of one per place: a token without admin rights is
+		// denied every repository on every pass.
+		log.Warn("directory sync skipped places the token cannot read (roles and permissions need an admin token)",
+			"count", len(denied), "first", denied[:min(len(denied), 3)])
 	}
 	log.Info("directory sync finished", "members", members, "permissions", permissions, "profiles", profiles, "skipped", skipped)
 	return nil
