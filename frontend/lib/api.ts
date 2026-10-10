@@ -159,6 +159,28 @@ export type Finding = {
 
 export type FindingStatus = "open" | "fixed" | "dismissed";
 export type Role = "viewer" | "author" | "senior" | "lead" | "admin";
+export type WorkFinding = {
+  id: number;
+  severity: Severity;
+  category: string;
+  title: string;
+  file_path: string;
+  line_start: number;
+  sent_back: { by: { id: number; name: string } | null; note: string | null; at: string } | null;
+};
+export type WorkItem = {
+  kind: "commit" | "pull_request";
+  id: number;
+  title: string;
+  number: number | null;
+  repository: string;
+  author: string | null;
+  reviewed_at: string;
+  findings: number;
+  open_findings: WorkFinding[];
+};
+export type MyWork = { to_fix: { total_findings: number; items: WorkItem[] }; to_review: WorkItem[] };
+
 export type Me = { role: Role; user: { id: number; name: string } | null };
 
 export type FailedAttempts = {
@@ -254,6 +276,7 @@ type Page<T> = { items: T[]; total: number; limit: number; offset: number };
 
 export const api = {
   me: () => call<Me>("/me"),
+  myWork: () => call<MyWork>("/me/work"),
   meWith: (token: string) => call<Me>("/me", {}, token),
   findingFixed: (id: number, note: string) => call<{ status: string }>(`/findings/${id}/fixed`, { method: "POST", body: JSON.stringify({ note }) }),
   findingReopen: (id: number, note: string) => call<{ status: string }>(`/findings/${id}/reopen`, { method: "POST", body: JSON.stringify({ note }) }),

@@ -101,6 +101,17 @@ func (s *server) me(w http.ResponseWriter, r *http.Request, role string) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// myWork is the calling user's to-do list. A token with no user gets empty lists.
+func (s *server) myWork(w http.ResponseWriter, r *http.Request, role string) {
+	p := principalOf(r)
+	out, err := s.data.MyWork(r.Context(), p.UserID, config.RoleAtLeast(role, config.RoleSenior))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *server) overview(w http.ResponseWriter, r *http.Request, _ string) {
 	days, err := intParam(r, "days", defaultDays, 1, maxDays)
 	if err != nil {
