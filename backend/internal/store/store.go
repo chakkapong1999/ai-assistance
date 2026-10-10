@@ -79,5 +79,11 @@ func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	if !has {
 		return errors.New("store: the review attempts table is missing: run `make migrate` (migration 0006)")
 	}
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('audit_log') IS NOT NULL`).Scan(&has); err != nil {
+		return fmt.Errorf("store: check audit_log: %w", err)
+	}
+	if !has {
+		return errors.New("store: the audit log table is missing: run `make migrate` (migration 0007)")
+	}
 	return nil
 }

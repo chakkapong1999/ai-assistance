@@ -193,7 +193,7 @@ func (d *Dashboard) PullRequest(ctx context.Context, id int64) (PullRequestDetai
 
 // RereviewPullRequest puts a pull request back in the queue, atomically with
 // its status, like Rereview does for a commit.
-func (d *Dashboard) RereviewPullRequest(ctx context.Context, id int64) error {
+func (d *Dashboard) RereviewPullRequest(ctx context.Context, a Actor, id int64) error {
 	tx, err := d.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -226,6 +226,9 @@ func (d *Dashboard) RereviewPullRequest(ctx context.Context, id int64) error {
 	opts := jobs.ReviewPullRequestArgs{}.InsertOpts() // unique over waiting/running jobs only
 	if _, err := d.river.InsertTx(ctx, tx, jobs.ReviewPullRequestArgs{PullRequestID: id}, &opts); err != nil {
 		return fmt.Errorf("enqueue: %w", err)
+	}
+	if err := record(ctx, tx, a, AuditPullRequestRereview, "pull_request", id, nil); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }

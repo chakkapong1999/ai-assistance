@@ -1171,3 +1171,164 @@ func TestDetailShowsFailedAttempts(t *testing.T) {
 		t.Errorf("attempts leaked to another commit: %+v", d.FailedAttempts)
 	}
 }
+
+func TestAuditLog(t *testing.T) {
+	e := setup(t)
+	exec(t, `TRUNCATE audit_log`)
+
+	var rv int64
+	if err := pool.QueryRow(context.Background(), `SELECT r.id FROM reviews r JOIN commits c ON c.id = r.commit_id WHERE c.hash = 'c10000'`).Scan(&rv); err != nil {
+		t.Fatal(err)
+	}
+	var fids []int64
+	rows, _ := pool.Query(context.Background(), `SELECT id FROM review_findings WHERE review_id = $1 ORDER BY id`, rv)
+	for rows.Next() {
+		var id int64
+		rows.Scan(&id)
+		fids = append(fids, id)
+	}
+	rows.Close()
+	f := func(i int, action string) string { return fmt.Sprintf("/api/v1/findings/%d/%s", fids[i], action) }
+
+	// Things that fail or change nothing leave no trace.
+	if code, _ := e.post(t, f(0, "fixed"), robTok, nil); code != 403 {
+		t.Fatalf("someone else's finding = %d", code)
+	}
+	if code, _ := e.post(t, f(1, "dismiss"), samTok, map[string]string{}); code != 409 {
+		t.Fatalf("dismiss without a note = %d", code)
+	}
+	web := "/api/v1/repositories/" + itoa(e.ids["web"])
+	if code, _ := e.do(t, "PATCH", web, adminTok, map[string]bool{"review_enabled": false}); code != 200 { // already off
+		t.Fatalf("no-op patch = %d", code)
+	}
+
+	// Things that work are logged, in order.
+	if code, b := e.post(t, f(0, "fixed"), aliceTok, map[string]string{"note": "moved the check"}); code != 200 {
+		t.Fatalf("fixed = %d %s", code, b)
+	}
+	if code, b := e.post(t, f(1, "dismiss"), samTok, map[string]string{"note": "not a bug"}); code != 200 {
+		t.Fatalf("dismiss = %d %s", code, b)
+	}
+	if code, _ := e.do(t, "PATCH", web, adminTok, map[string]bool{"review_enabled": true}); code != 200 {
+		t.Fatalf("enable = %d", code)
+	}
+	if code, b := e.post(t, "/api/v1/commits/"+itoa(e.ids["c1"])+"/rereview", adminSamTok, nil); code != 202 {
+		t.Fatalf("rereview = %d %s", code, b)
+	}
+
+	type entry struct {
+		Action string `json:"action"`
+		Actor  struct {
+			ID   *int64  `json:"id"`
+			Name *string `json:"name"`
+			Role string  `json:"role"`
+		} `json:"actor"`
+		Subject struct {
+			Type string `json:"type"`
+			ID   int64  `json:"id"`
+		} `json:"subject"`
+		Detail map[string]any `json:"detail"`
+	}
+	type auditPage struct {
+		Total int     `json:"total"`
+		Items []entry `json:"items"`
+	}
+	list := func(q string) auditPage {
+		t.Helper()
+		code, b := e.do(t, "GET", "/api/v1/audit"+q, adminTok, nil)
+		if code != 200 {
+			t.Fatalf("GET audit%s = %d %s", q, code, b)
+		}
+		var p auditPage
+		if err := json.Unmarshal(b, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	all := list("")
+	var got []string
+	for _, it := range all.Items {
+		got = append(got, it.Action)
+	}
+	want := []string{"commit.rereview", "repository.review_enabled", "finding.dismissed", "finding.fixed"}
+	if all.Total != 4 || strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("audit = %d %v, want newest first %v", all.Total, got, want)
+	}
+	fixed, dismissed, repo, rr := all.Items[3], all.Items[2], all.Items[1], all.Items[0]
+	if fixed.Actor.Name == nil || *fixed.Actor.Name != "Alice A" || fixed.Actor.Role != "author" ||
+		fixed.Subject.Type != "finding" || fixed.Subject.ID != fids[0] ||
+		fixed.Detail["note"] != "moved the check" || fixed.Detail["from"] != "open" || fixed.Detail["to"] != "fixed" ||
+		fixed.Detail["commit_id"] != float64(e.ids["c1"]) || fixed.Detail["review_id"] != float64(rv) {
+		t.Errorf("fixed entry = %+v", fixed)
+	}
+	if dismissed.Actor.Role != "senior" || dismissed.Detail["note"] != "not a bug" {
+		t.Errorf("dismissed entry = %+v", dismissed)
+	}
+	// A token that is not linked to a user is logged by role only.
+	if repo.Actor.ID != nil || repo.Actor.Name != nil || repo.Actor.Role != "admin" || repo.Subject.Type != "repository" || repo.Detail["repository"] != "acme/web" {
+		t.Errorf("repository entry = %+v", repo)
+	}
+	if rr.Actor.Role != "admin" || rr.Actor.Name == nil || *rr.Actor.Name != "Sam Senior" || rr.Subject.Type != "commit" || rr.Subject.ID != e.ids["c1"] {
+		t.Errorf("rereview entry = %+v", rr)
+	}
+
+	// Filters.
+	if n := list("?action=finding").Total; n != 2 {
+		t.Errorf("action=finding = %d, want 2", n)
+	}
+	if n := list("?action=finding.fixed").Total; n != 1 {
+		t.Errorf("action=finding.fixed = %d, want 1", n)
+	}
+	if n := list("?actor_id=" + itoa(e.ids["alice"])).Total; n != 1 {
+		t.Errorf("actor_id=alice = %d, want 1", n)
+	}
+	if n := list("?subject_type=repository&subject_id=" + itoa(e.ids["web"])).Total; n != 1 {
+		t.Errorf("repository filter = %d, want 1", n)
+	}
+	if p := list("?limit=1&offset=1"); p.Total != 4 || len(p.Items) != 1 || p.Items[0].Action != "repository.review_enabled" {
+		t.Errorf("paging = %+v", p)
+	}
+	for _, q := range []string{"?actor_id=0", "?subject_type=bogus", "?since=yesterday", "?limit=0"} {
+		if code, _ := e.do(t, "GET", "/api/v1/audit"+q, adminTok, nil); code != 400 {
+			t.Errorf("%s = %d, want 400", q, code)
+		}
+	}
+
+	// Only admins read it.
+	for _, tok := range []string{viewerTok, aliceTok, samTok, ""} {
+		want := 403
+		if tok == "" {
+			want = 401
+		}
+		if code, _ := e.do(t, "GET", "/api/v1/audit", tok, nil); code != want {
+			t.Errorf("token %q: audit = %d, want %d", tok, code, want)
+		}
+	}
+
+	// The log cannot be rewritten through the database either.
+	if _, err := pool.Exec(context.Background(), `UPDATE audit_log SET actor_role = 'admin'`); err == nil {
+		t.Error("audit_log was updated")
+	}
+	if _, err := pool.Exec(context.Background(), `DELETE FROM audit_log`); err == nil {
+		t.Error("audit_log was deleted from")
+	}
+
+	// A closed review is logged too, and reopening it is its own entry.
+	exec(t, `UPDATE review_findings SET status = 'fixed' WHERE review_id = $1 AND status = 'open'`, rv)
+	if code, b := e.post(t, fmt.Sprintf("/api/v1/reviews/%d/close", rv), samTok, map[string]string{"note": "all good"}); code != 200 {
+		t.Fatalf("close = %d %s", code, b)
+	}
+	if code, b := e.post(t, f(0, "reopen"), samTok, map[string]string{"note": "still broken"}); code != 200 {
+		t.Fatalf("reopen = %d %s", code, b)
+	}
+	acts := map[string]bool{}
+	for _, it := range list("?limit=50").Items {
+		acts[it.Action] = true
+	}
+	for _, a := range []string{"review.closed", "review.reopened", "finding.reopened"} {
+		if !acts[a] {
+			t.Errorf("missing %s in %v", a, acts)
+		}
+	}
+}

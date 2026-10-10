@@ -378,13 +378,38 @@ func (d *Dashboard) Repository(ctx context.Context, id int64) (Repository, error
 	return r, err
 }
 
-func (d *Dashboard) SetReviewEnabled(ctx context.Context, id int64, enabled bool) (Repository, error) {
-	tag, err := d.pool.Exec(ctx, `UPDATE repositories SET review_enabled = $2 WHERE id = $1`, id, enabled)
+func (d *Dashboard) SetReviewEnabled(ctx context.Context, a Actor, id int64, enabled bool) (Repository, error) {
+	tx, err := d.pool.Begin(ctx)
 	if err != nil {
 		return Repository{}, err
 	}
-	if tag.RowsAffected() == 0 {
+	defer tx.Rollback(ctx) //nolint:errcheck
+	var was bool
+	var name string
+	err = tx.QueryRow(ctx, `
+		SELECT r.review_enabled, ws.slug || '/' || r.slug
+		FROM repositories r JOIN projects p ON p.id = r.project_id JOIN workspaces ws ON ws.id = p.workspace_id
+		WHERE r.id = $1 FOR UPDATE OF r`, id).Scan(&was, &name)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return Repository{}, ErrNotFound
+	}
+	if err != nil {
+		return Repository{}, err
+	}
+	if was != enabled { // setting what it already is changes nothing, so it is not logged
+		if _, err := tx.Exec(ctx, `UPDATE repositories SET review_enabled = $2 WHERE id = $1`, id, enabled); err != nil {
+			return Repository{}, err
+		}
+		action := AuditRepoReviewOff
+		if enabled {
+			action = AuditRepoReviewOn
+		}
+		if err := record(ctx, tx, a, action, "repository", id, map[string]any{"repository": name}); err != nil {
+			return Repository{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Repository{}, err
 	}
 	return d.Repository(ctx, id)
 }
@@ -802,7 +827,7 @@ func (d *Dashboard) loadHistory(ctx context.Context, rv *Review) error {
 
 // Rereview puts a commit back in the queue. The status change and the job
 // are one transaction, so a commit is never left "pending" without a job.
-func (d *Dashboard) Rereview(ctx context.Context, id int64) error {
+func (d *Dashboard) Rereview(ctx context.Context, a Actor, id int64) error {
 	tx, err := d.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -848,6 +873,9 @@ func (d *Dashboard) Rereview(ctx context.Context, id int64) error {
 	}
 	if _, err := d.river.InsertTx(ctx, tx, jobs.ReviewCommitArgs{CommitID: id}, &opts); err != nil {
 		return fmt.Errorf("enqueue: %w", err)
+	}
+	if err := record(ctx, tx, a, AuditCommitRereview, "commit", id, nil); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }
