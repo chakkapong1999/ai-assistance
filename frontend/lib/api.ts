@@ -263,6 +263,15 @@ export type User = {
 
 export type UserDetail = User & { days: number; trend: { week: string; commits: number; reviewed: number; avg_score: number | null }[] };
 
+export type AuditEntry = {
+  id: number;
+  at: string;
+  actor: { id: number | null; name: string | null; role: string };
+  action: string;
+  subject: { type: "finding" | "review" | "commit" | "pull_request" | "repository"; id: number };
+  detail: Record<string, unknown>;
+};
+
 type Page<T> = { items: T[]; total: number; limit: number; offset: number };
 
 export const api = {
@@ -286,6 +295,7 @@ export const api = {
     call<{ items: PullRequestSummary[]; total: number; next_cursor: string | null }>(`/pull-requests${qs(p)}`),
   pullRequest: (id: number) => call<PullRequestDetail>(`/pull-requests/${id}`),
   rereviewPullRequest: (id: number) => call<{ status: string }>(`/pull-requests/${id}/rereview`, { method: "POST" }),
+  audit: (p: Record<string, string | number | undefined>) => call<Page<AuditEntry>>(`/audit${qs(p)}`),
   users: (p: Record<string, string | number | undefined>) => call<Page<User>>(`/users${qs(p)}`),
   user: (id: number, days: number) => call<UserDetail>(`/users/${id}${qs({ days })}`),
 };

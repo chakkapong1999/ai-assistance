@@ -29,15 +29,15 @@ type Data interface {
 	Health(ctx context.Context) (store.Health, error)
 	Repositories(ctx context.Context, f store.RepoFilter, limit, offset int) ([]store.Repository, int, error)
 	Repository(ctx context.Context, id int64) (store.Repository, error)
-	SetReviewEnabled(ctx context.Context, id int64, enabled bool) (store.Repository, error)
+	SetReviewEnabled(ctx context.Context, a store.Actor, id int64, enabled bool) (store.Repository, error)
 	Commits(ctx context.Context, f store.CommitFilter, cursor string, limit int) ([]store.CommitSummary, string, error)
 	CountCommits(ctx context.Context, f store.CommitFilter) (int, error)
 	Commit(ctx context.Context, id int64) (store.CommitDetail, error)
-	Rereview(ctx context.Context, id int64) error
+	Rereview(ctx context.Context, a store.Actor, id int64) error
 	PullRequests(ctx context.Context, f store.PullRequestFilter, cursor string, limit int) ([]store.PullRequestSummary, string, error)
 	CountPullRequests(ctx context.Context, f store.PullRequestFilter) (int, error)
 	PullRequest(ctx context.Context, id int64) (store.PullRequestDetail, error)
-	RereviewPullRequest(ctx context.Context, id int64) error
+	RereviewPullRequest(ctx context.Context, a store.Actor, id int64) error
 	Users(ctx context.Context, q, sort string, days, limit, offset int) ([]store.User, int, error)
 	User(ctx context.Context, id int64, days int) (store.UserDetail, error)
 	UserName(ctx context.Context, id int64) (string, error)
@@ -46,6 +46,7 @@ type Data interface {
 	Dismiss(ctx context.Context, a store.Actor, findingID int64, note string) error
 	CloseReview(ctx context.Context, a store.Actor, reviewID int64, note string) error
 	MyWork(ctx context.Context, userID int64, reviewer bool) (store.MyWork, error)
+	Audit(ctx context.Context, f store.AuditFilter, limit, offset int) ([]store.AuditEntry, int, error)
 }
 
 var _ Data = (*store.Dashboard)(nil)
@@ -68,7 +69,7 @@ type principal struct {
 }
 
 func (p principal) actor() store.Actor {
-	return store.Actor{UserID: p.UserID, Reviewer: config.RoleAtLeast(p.Role, config.RoleSenior), Admin: p.Role == config.RoleAdmin}
+	return store.Actor{Role: p.Role, UserID: p.UserID, Reviewer: config.RoleAtLeast(p.Role, config.RoleSenior), Admin: p.Role == config.RoleAdmin}
 }
 
 type principalKey struct{}
@@ -121,6 +122,7 @@ var table = []route{
 	{Route{"POST", "/api/v1/findings/{id}/reopen", Senior}, (*server).findingReopen},
 	{Route{"POST", "/api/v1/findings/{id}/dismiss", Senior}, (*server).findingDismiss},
 	{Route{"POST", "/api/v1/reviews/{id}/close", Senior}, (*server).reviewClose},
+	{Route{"GET", "/api/v1/audit", Admin}, (*server).listAudit},
 	{Route{"GET", "/api/v1/users", Viewer}, (*server).listUsers},
 	{Route{"GET", "/api/v1/users/{id}", Viewer}, (*server).getUser},
 }
