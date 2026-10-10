@@ -45,6 +45,7 @@ type Data interface {
 	Reopen(ctx context.Context, a store.Actor, findingID int64, note string) error
 	Dismiss(ctx context.Context, a store.Actor, findingID int64, note string) error
 	CloseReview(ctx context.Context, a store.Actor, reviewID int64, note string) error
+	MyWork(ctx context.Context, userID int64, reviewer bool) (store.MyWork, error)
 }
 
 var _ Data = (*store.Dashboard)(nil)
@@ -104,6 +105,7 @@ type route struct {
 var table = []route{
 	{Route{"GET", "/api/v1/openapi.yaml", Public}, (*server).openapi},
 	{Route{"GET", "/api/v1/me", Viewer}, (*server).me},
+	{Route{"GET", "/api/v1/me/work", Viewer}, (*server).myWork},
 	{Route{"GET", "/api/v1/overview", Viewer}, (*server).overview},
 	{Route{"GET", "/api/v1/health", Viewer}, (*server).health},
 	{Route{"GET", "/api/v1/repositories", Viewer}, (*server).listRepos},

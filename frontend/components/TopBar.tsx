@@ -59,7 +59,7 @@ export default function TopBar({ me }: { me: Me | null }) {
         <span>Code review</span>
       </Link>
       <nav aria-label="Main">
-        {items.map(([href, text]) => {
+        {[...(me?.user ? ([["/my-work", "My work"]] as const) : []), ...items].map(([href, text]) => {
           const active = href === "/" ? path === "/" : path.startsWith(href);
           return (
             <Link

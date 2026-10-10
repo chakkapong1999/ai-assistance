@@ -43,6 +43,26 @@ paths:
                     required: [id, name]
                     properties: { id: { type: integer, format: int64 }, name: { type: string } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/me/work:
+    get:
+      summary: What the calling user has to do
+      description: |
+        `to_fix` is the user's own open findings on the latest, unclosed review of
+        their commits and pull requests (declined, superseded and deleted pull
+        requests left out), worst severity first. At most 200 findings are listed;
+        `total_findings` says how many there are. A finding a reviewer sent back has
+        `sent_back` with who, why and when.
+        `to_review` is for senior, lead and admin (empty for others): other people's
+        work whose findings are all fixed or dismissed and which is not closed yet.
+        A token that is not linked to a user gets empty lists.
+      x-required-role: viewer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MyWork" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/overview:
     get:
       summary: Totals and a daily series for the last N UTC days
@@ -357,6 +377,52 @@ components:
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     Conflict: { description: State does not allow it, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    WorkFinding:
+      type: object
+      required: [id, severity, category, title, file_path, line_start, sent_back]
+      properties:
+        id: { type: integer, format: int64 }
+        severity: { type: string, enum: [critical, major, minor, info] }
+        category: { type: string }
+        title: { type: string }
+        file_path: { type: string }
+        line_start: { type: integer }
+        sent_back:
+          nullable: true
+          type: object
+          required: [by, note, at]
+          properties:
+            by:
+              nullable: true
+              type: object
+              required: [id, name]
+              properties: { id: { type: integer, format: int64 }, name: { type: string } }
+            note: { type: string, nullable: true }
+            at: { type: string, format: date-time }
+    WorkItem:
+      type: object
+      required: [kind, id, title, number, repository, author, reviewed_at, findings, open_findings]
+      properties:
+        kind: { type: string, enum: [commit, pull_request] }
+        id: { type: integer, format: int64 }
+        title: { type: string }
+        number: { type: integer, nullable: true, description: Pull request number }
+        repository: { type: string }
+        author: { type: string, nullable: true, description: Only set in to_review }
+        reviewed_at: { type: string, format: date-time }
+        findings: { type: integer, description: All findings of the review }
+        open_findings: { type: array, items: { $ref: "#/components/schemas/WorkFinding" }, description: Empty in to_review }
+    MyWork:
+      type: object
+      required: [to_fix, to_review]
+      properties:
+        to_fix:
+          type: object
+          required: [total_findings, items]
+          properties:
+            total_findings: { type: integer }
+            items: { type: array, items: { $ref: "#/components/schemas/WorkItem" } }
+        to_review: { type: array, items: { $ref: "#/components/schemas/WorkItem" } }
     Error:
       type: object
       required: [error]

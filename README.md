@@ -105,6 +105,15 @@ API_TOKENS='<random>:author:12,<random>:senior:7,<random>:lead:3,<random>:admin:
 - When Bitbucket OAuth arrives, only the sign-in step changes: the workflow already works on users and roles.
 - Run `make migrate` for migration 0005. Endpoints: `POST /api/v1/findings/{id}/fixed|reopen|dismiss`, `POST /api/v1/reviews/{id}/close`; `GET /api/v1/me` shows who the token is.
 
+## My work
+
+Signed in with a personal token, `/my-work` in the dashboard (`GET /api/v1/me/work`) lists what is yours to do today:
+
+- **To fix**: your own open findings on the latest, unclosed review of your commits and pull requests (declined, superseded and deleted pull requests are left out), worst severity first, each linking to the finding. A finding a reviewer sent back shows who sent it, when and why. At most 200 findings are listed.
+- **Waiting for your review** (senior, lead and admin): other people's work where every finding is fixed or dismissed and nobody has closed the review yet. Your own work never appears here.
+
+A token that is not linked to a user gets empty lists. No migration needed.
+
 ## Dashboard (`frontend/`)
 
 Next.js (server components, no client-side data fetching): the browser only receives HTML; the server reads the REST API with `API_TOKEN`.

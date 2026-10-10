@@ -1171,3 +1171,100 @@ func TestDetailShowsFailedAttempts(t *testing.T) {
 		t.Errorf("attempts leaked to another commit: %+v", d.FailedAttempts)
 	}
 }
+
+func TestMyWork(t *testing.T) {
+	e := setup(t)
+	work := func(tok string) store.MyWork {
+		t.Helper()
+		code, b := e.do(t, "GET", "/api/v1/me/work", tok, nil)
+		if code != 200 {
+			t.Fatalf("me/work = %d %s", code, b)
+		}
+		var w store.MyWork
+		if err := json.Unmarshal(b, &w); err != nil {
+			t.Fatal(err)
+		}
+		return w
+	}
+	if code, _ := e.do(t, "GET", "/api/v1/me/work", "", nil); code != 401 {
+		t.Fatalf("no token = %d", code)
+	}
+
+	// Alice's open findings, worst first; the stale review of c2 does not count.
+	w := work(aliceTok)
+	if len(w.ToFix.Items) != 1 || w.ToFix.TotalFindings != 3 || len(w.ToReview) != 0 {
+		t.Fatalf("alice: %+v", w)
+	}
+	it := w.ToFix.Items[0]
+	if it.Kind != "commit" || it.ID != e.ids["c1"] || it.Title != "Fix login" || it.Repository != "acme/api" || it.Findings != 3 {
+		t.Fatalf("item: %+v", it)
+	}
+	var sev []string
+	var fids []int64
+	for _, f := range it.Open {
+		sev = append(sev, f.Severity)
+		fids = append(fids, f.ID)
+		if f.SentBack != nil {
+			t.Fatalf("nothing was sent back yet: %+v", f)
+		}
+	}
+	if fmt.Sprint(sev) != "[critical major minor]" {
+		t.Fatalf("order = %v", sev)
+	}
+
+	// Nobody else has anything to fix; a token with no user gets empty lists, not null.
+	for _, tok := range []string{robTok, viewerTok, adminTok} {
+		if w := work(tok); len(w.ToFix.Items) != 0 || w.ToFix.TotalFindings != 0 || len(w.ToReview) != 0 {
+			t.Fatalf("%s: %+v", tok, w)
+		}
+	}
+	if _, b := e.do(t, "GET", "/api/v1/me/work", viewerTok, nil); !strings.Contains(string(b), `"items":[]`) || !strings.Contains(string(b), `"to_review":[]`) {
+		t.Fatalf("empty lists must be arrays: %s", b)
+	}
+
+	// A pull request counts while it matters; a declined one does not.
+	for _, st := range []string{"OPEN", "DECLINED"} {
+		pr := must(t, `INSERT INTO pull_requests (repo_id, bb_pr_id, title, state, author_user_id) VALUES ($1, $2, 'PR '||$3::text, $3, $4) RETURNING id`,
+			e.ids["api"], map[string]int{"OPEN": 7, "DECLINED": 8}[st], st, e.ids["alice"])
+		rv := must(t, `INSERT INTO reviews (pr_id, model, prompt_version, score, summary) VALUES ($1, 'mock', 'v1', 50, 's') RETURNING id`, pr)
+		exec(t, `INSERT INTO review_findings (review_id, file_path, line_start, line_end, severity, category, title, explanation) VALUES ($1, 'p.go', 1, 1, 'minor', 'bug', 'pr finding', 'x')`, rv)
+	}
+	w = work(aliceTok)
+	if len(w.ToFix.Items) != 2 || w.ToFix.TotalFindings != 4 {
+		t.Fatalf("with a pull request: %+v", w.ToFix)
+	}
+	if p := w.ToFix.Items[1]; p.Kind != "pull_request" || p.Title != "PR OPEN" || p.Number == nil || *p.Number != 7 {
+		t.Fatalf("pull request item: %+v", p)
+	}
+	exec(t, `DELETE FROM pull_requests WHERE state = 'OPEN'`)
+
+	// Once everything is fixed it is the reviewer's turn, and only a reviewer sees it.
+	for _, id := range fids {
+		if code, b := e.post(t, fmt.Sprintf("/api/v1/findings/%d/fixed", id), aliceTok, nil); code != 200 {
+			t.Fatalf("fixed = %d %s", code, b)
+		}
+	}
+	if w := work(aliceTok); len(w.ToFix.Items) != 0 || len(w.ToReview) != 0 {
+		t.Fatalf("alice after fixing: %+v", w)
+	}
+	w = work(samTok)
+	if len(w.ToReview) != 1 || w.ToReview[0].ID != e.ids["c1"] || w.ToReview[0].Author == nil || *w.ToReview[0].Author != "Alice A" {
+		t.Fatalf("sam: %+v", w.ToReview)
+	}
+
+	// Sending one back puts it on Alice's list with the reason, and takes the commit off Sam's.
+	if code, b := e.post(t, fmt.Sprintf("/api/v1/findings/%d/reopen", fids[0]), samTok, map[string]string{"note": "still reachable"}); code != 200 {
+		t.Fatalf("reopen = %d %s", code, b)
+	}
+	w = work(aliceTok)
+	if len(w.ToFix.Items) != 1 || len(w.ToFix.Items[0].Open) != 1 {
+		t.Fatalf("alice after send back: %+v", w)
+	}
+	sb := w.ToFix.Items[0].Open[0].SentBack
+	if sb == nil || sb.By == nil || sb.By.Name != "Sam Senior" || sb.Note == nil || *sb.Note != "still reachable" {
+		t.Fatalf("sent back = %+v", sb)
+	}
+	if w := work(samTok); len(w.ToReview) != 0 {
+		t.Fatalf("sam still has it: %+v", w.ToReview)
+	}
+}
