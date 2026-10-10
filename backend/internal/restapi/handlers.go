@@ -197,7 +197,7 @@ func (s *server) patchRepo(w http.ResponseWriter, r *http.Request, _ string) {
 		badRequest(w, paramError(`body must be {"review_enabled": true|false}`))
 		return
 	}
-	repo, err := s.data.SetReviewEnabled(r.Context(), id, *body.ReviewEnabled)
+	repo, err := s.data.SetReviewEnabled(r.Context(), principalOf(r).actor(), id, *body.ReviewEnabled)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -305,7 +305,7 @@ func (s *server) rereview(w http.ResponseWriter, r *http.Request, _ string) {
 		badID(w)
 		return
 	}
-	if err := s.data.Rereview(r.Context(), id); err != nil {
+	if err := s.data.Rereview(r.Context(), principalOf(r).actor(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -403,7 +403,7 @@ func (s *server) rereviewPullRequest(w http.ResponseWriter, r *http.Request, _ s
 		badID(w)
 		return
 	}
-	if err := s.data.RereviewPullRequest(r.Context(), id); err != nil {
+	if err := s.data.RereviewPullRequest(r.Context(), principalOf(r).actor(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -514,4 +514,50 @@ func (s *server) findingDismiss(w http.ResponseWriter, r *http.Request, role str
 }
 func (s *server) reviewClose(w http.ResponseWriter, r *http.Request, role string) {
 	s.workflowAction("close", s.data.CloseReview)(w, r, role)
+}
+
+var auditSubjects = map[string]bool{"finding": true, "review": true, "commit": true, "pull_request": true, "repository": true}
+
+func (s *server) listAudit(w http.ResponseWriter, r *http.Request, _ string) {
+	limit, offset, err := paging(r)
+	if err != nil {
+		badRequest(w, err)
+		return
+	}
+	var f store.AuditFilter
+	for _, p := range []struct {
+		name string
+		dst  *int64
+	}{{"actor_id", &f.ActorID}, {"subject_id", &f.SubjectID}} {
+		if v := r.URL.Query().Get(p.name); v != "" {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || n < 1 {
+				badRequest(w, paramError(p.name+" must be a positive integer"))
+				return
+			}
+			*p.dst = n
+		}
+	}
+	if f.Action, err = textParam(r, "action"); err != nil {
+		badRequest(w, err)
+		return
+	}
+	if f.SubjectType = r.URL.Query().Get("subject_type"); f.SubjectType != "" && !auditSubjects[f.SubjectType] {
+		badRequest(w, paramError("subject_type must be one of finding, review, commit, pull_request, repository"))
+		return
+	}
+	if f.Since, err = timeParam(r, "since"); err != nil {
+		badRequest(w, err)
+		return
+	}
+	if f.Until, err = timeParam(r, "until"); err != nil {
+		badRequest(w, err)
+		return
+	}
+	items, total, err := s.data.Audit(r.Context(), f, limit, offset)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page[store.AuditEntry]{items, total, limit, offset})
 }

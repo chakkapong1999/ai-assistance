@@ -105,6 +105,15 @@ API_TOKENS='<random>:author:12,<random>:senior:7,<random>:lead:3,<random>:admin:
 - When Bitbucket OAuth arrives, only the sign-in step changes: the workflow already works on users and roles.
 - Run `make migrate` for migration 0005. Endpoints: `POST /api/v1/findings/{id}/fixed|reopen|dismiss`, `POST /api/v1/reviews/{id}/close`; `GET /api/v1/me` shows who the token is.
 
+## Audit log (migration 0007)
+
+Every change someone makes is written to the `audit_log` table in the same transaction as the change itself: finding marked fixed, sent back or dismissed; review closed or reopened; review switched on or off for a repository; a new review asked for. Failed or refused actions, and changes that change nothing, are not logged.
+
+- Admins read it at `/audit` in the dashboard or at `GET /api/v1/audit` (filters: `actor_id`, `action`, `subject_type`, `subject_id`, `since`, `until`, plus paging). No other role can.
+- It is append-only: a trigger rejects UPDATE and DELETE. The actor's name is copied into each row, so it stays readable after a user is renamed or removed.
+- A token that is not linked to a user is logged by role only.
+- Run `make migrate` after pulling; the server refuses to start until migration 0007 is applied.
+
 ## Dashboard (`frontend/`)
 
 Next.js (server components, no client-side data fetching): the browser only receives HTML; the server reads the REST API with `API_TOKEN`.
