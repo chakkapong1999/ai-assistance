@@ -6,6 +6,7 @@ import { ago, compact, intParam, num, usd, plural } from "@/lib/format";
 import BarChart from "@/components/BarChart";
 import Score from "@/components/Score";
 import Window from "@/components/Window";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export const metadata = { title: "Overview" };
 
@@ -28,6 +29,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const failed = o.commits_by_status.failed;
   const waiting = o.commits_by_status.pending + o.commits_by_status.running;
   const label = (d: string) => d.slice(5);
+  // ?? : an API older than the dashboard
+  const cats = Object.entries(o.findings_by_category ?? {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const attention = [
     ...(failedCommits?.items ?? []).map((c) => ({ key: `c${c.id}`, href: `/commits/${c.id}`, title: c.subject || "(no message)", where: c.repository.full_name, kind: "Commit", when: c.committed_at })),
     ...(failedPRs?.items ?? []).map((p) => ({ key: `p${p.id}`, href: `/pull-requests/${p.id}`, title: p.title || "(no title)", where: `${p.repository.full_name} #${p.number}`, kind: "Pull request", when: p.updated_at })),
@@ -37,6 +40,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     <>
       <div className="head">
         <h1>Overview</h1>
+        {o.queue_waiting + o.queue_running > 0 ? <AutoRefresh seconds={15} /> : null}
         <Window base="/" days={days} />
       </div>
 
@@ -187,6 +191,44 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </div>
         </section>
       </div>
+
+      {totalFindings > 0 ? (
+        <div className="split section">
+          <section className="block" aria-labelledby="byrepo">
+            <header style={{ display: "block" }}>
+              <h2 id="byrepo">Where the findings are</h2>
+              <p>Repositories with the most critical, then major findings.</p>
+            </header>
+            <ul className="legend">
+              {(o.top_repositories ?? []).map((r) => (
+                <li key={r.id}>
+                  <Link href={`/commits?repo_id=${r.id}`}>{r.full_name}</Link>
+                  <span className="num">
+                    {r.critical > 0 ? <strong className="crit">{num(r.critical)} critical · </strong> : null}
+                    {r.major > 0 ? `${num(r.major)} major · ` : null}
+                    {plural(r.findings, "finding")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="block" aria-labelledby="bycat">
+            <header style={{ display: "block" }}>
+              <h2 id="bycat">Findings by kind</h2>
+              <p>What the reviewer flagged, from the same reviews.</p>
+            </header>
+            <ul className="legend">
+              {cats.map(([c, n]) => (
+                <li key={c}>
+                  <span>{c[0].toUpperCase() + c.slice(1)}</span>
+                  <span className="num">{num(n)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      ) : null}
 
       <div className="split section">
         <section className="block" aria-labelledby="recent">

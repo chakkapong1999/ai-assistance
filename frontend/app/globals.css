@@ -88,6 +88,7 @@ code, .mono { font-family: var(--mono); font-size: .88em; }
 /* One marker shape behind the word: grey on hover, the lime highlighter on the page you are on. */
 .top nav a::before { content: ""; position: absolute; inset: 7px 5px; z-index: -1; border-radius: 3px; transform: skewX(-8deg); background: transparent; transition: background-color .15s var(--ease); }
 .top nav a:hover { color: var(--text); }
+.top nav .count { margin-left: 6px; padding: 0 6px; border-radius: 9px; background: var(--text); color: var(--sheet); font: 600 11px/18px var(--mono); font-variant-numeric: tabular-nums; }
 .top nav a:hover::before { background: var(--sunk); }
 .top nav a[aria-current="page"], .top nav a[aria-current="page"]:hover { color: #1c2233; }
 .top nav a[aria-current="page"]::before { background: var(--hl); }

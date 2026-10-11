@@ -31,7 +31,7 @@ const roles = {
   ],
 } as const;
 
-export default function TopBar({ me }: { me: Me | null }) {
+export default function TopBar({ me, todo }: { me: Me | null; todo: number }) {
   const path = usePathname();
   const [label, hint] = roles[me?.role ?? "none"];
   const role = me?.role ?? null;
@@ -68,6 +68,7 @@ export default function TopBar({ me }: { me: Me | null }) {
               aria-current={active ? "page" : undefined}
             >
               {text}
+              {href === "/my-work" && todo > 0 ? <span className="count"><span className="sr">, </span>{todo}<span className="sr"> to do</span></span> : null}
             </Link>
           );
         })}

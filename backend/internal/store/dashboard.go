@@ -116,6 +116,9 @@ type Overview struct {
 	Reviewed      int            `json:"reviewed"`
 	AvgScore      *float64       `json:"avg_score"`
 	FindingsBySev map[string]int `json:"findings_by_severity"`
+	FindingsByCat map[string]int `json:"findings_by_category"`
+	// TopRepos are the repositories with the worst findings, at most 5.
+	TopRepos      []RepoFindings `json:"top_repositories"`
 	QueueWaiting  int            `json:"queue_waiting"`
 	QueueRunning  int            `json:"queue_running"`
 	Series        []DayPoint     `json:"series"`
@@ -125,6 +128,14 @@ type Overview struct {
 	TotalRepos    int            `json:"total_repositories"`
 	// Fix is the state of the latest reviews of the commits in the window.
 	Fix FixOverview `json:"fix"`
+}
+
+// RepoFindings counts one repository's findings, latest reviews only.
+type RepoFindings struct {
+	RepoRef
+	Findings int `json:"findings"`
+	Critical int `json:"critical"`
+	Major    int `json:"major"`
 }
 
 type FixOverview struct {
@@ -142,6 +153,8 @@ func (d *Dashboard) Overview(ctx context.Context, days int) (Overview, error) {
 		Days: days, Since: since,
 		ByStatus:      map[string]int{"pending": 0, "running": 0, "done": 0, "skipped": 0, "failed": 0},
 		FindingsBySev: map[string]int{"critical": 0, "major": 0, "minor": 0, "info": 0},
+		FindingsByCat: map[string]int{},
+		TopRepos:      []RepoFindings{},
 		Series:        []DayPoint{},
 	}
 
@@ -188,21 +201,51 @@ func (d *Dashboard) Overview(ctx context.Context, days int) (Overview, error) {
 	}
 
 	rows, err = d.pool.Query(ctx, `
-		SELECT f.severity, count(*)
+		SELECT f.severity, f.category, count(*)
 		FROM commits c `+latestReview+`
 		JOIN review_findings f ON f.review_id = lr.id
-		WHERE c.committed_at >= $1 GROUP BY 1`, since)
+		WHERE c.committed_at >= $1 GROUP BY 1, 2`, since)
 	if err != nil {
 		return o, fmt.Errorf("findings: %w", err)
 	}
 	for rows.Next() {
-		var s string
+		var sev, cat string
 		var n int
-		if err := rows.Scan(&s, &n); err != nil {
+		if err := rows.Scan(&sev, &cat, &n); err != nil {
 			rows.Close()
 			return o, err
 		}
-		o.FindingsBySev[s] = n
+		o.FindingsBySev[sev] += n
+		o.FindingsByCat[cat] += n
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return o, err
+	}
+
+	rows, err = d.pool.Query(ctx, `
+		SELECT r.id, ws.slug || '/' || r.slug, count(*)::int,
+		       (count(*) FILTER (WHERE f.severity = 'critical'))::int,
+		       (count(*) FILTER (WHERE f.severity = 'major'))::int
+		FROM commits c `+latestReview+`
+		JOIN review_findings f ON f.review_id = lr.id
+		JOIN repositories r ON r.id = c.repo_id
+		JOIN projects p ON p.id = r.project_id
+		JOIN workspaces ws ON ws.id = p.workspace_id
+		WHERE c.committed_at >= $1
+		GROUP BY r.id, ws.slug, r.slug
+		ORDER BY 4 DESC, 5 DESC, 3 DESC, 2
+		LIMIT 5`, since)
+	if err != nil {
+		return o, fmt.Errorf("top repositories: %w", err)
+	}
+	for rows.Next() {
+		var t RepoFindings
+		if err := rows.Scan(&t.ID, &t.FullName, &t.Findings, &t.Critical, &t.Major); err != nil {
+			rows.Close()
+			return o, err
+		}
+		o.TopRepos = append(o.TopRepos, t)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
