@@ -494,6 +494,18 @@ components:
                 tokens_out: { type: integer, format: int64 }
                 cost_usd: { type: number }
         findings_by_severity: { type: object, additionalProperties: { type: integer }, description: Findings of each commit's latest review }
+        findings_by_category: { type: object, additionalProperties: { type: integer }, description: The same findings by category (bug, security, ...); only categories that occur }
+        top_repositories:
+          type: array
+          description: At most 5 repositories with findings in the window, most critical first, then most major, then most findings
+          items:
+            type: object
+            properties:
+              id: { type: integer, format: int64 }
+              full_name: { type: string }
+              findings: { type: integer }
+              critical: { type: integer }
+              major: { type: integer }
         queue_waiting: { type: integer }
         queue_running: { type: integer }
         active_repositories: { type: integer }

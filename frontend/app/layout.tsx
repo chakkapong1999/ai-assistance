@@ -14,13 +14,16 @@ export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const me = await api.me().catch(() => null);
+  // ponytail: reads the whole work list for one number on every page; add a count endpoint if /me/work gets slow
+  const work = me?.user ? await api.myWork().catch(() => null) : null;
+  const todo = work ? work.to_fix.total_findings + work.to_review.length : 0;
   return (
     <html lang="en">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body>
-        <TopBar me={me} />
+        <TopBar me={me} todo={todo} />
         <main className="main">{children}</main>
       </body>
     </html>

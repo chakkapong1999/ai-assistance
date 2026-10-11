@@ -488,7 +488,12 @@ func TestOverview(t *testing.T) {
 		Reviewed int            `json:"reviewed"`
 		AvgScore *float64       `json:"avg_score"`
 		Sev      map[string]int `json:"findings_by_severity"`
-		Series   []struct {
+		Cat      map[string]int `json:"findings_by_category"`
+		Top      []struct {
+			FullName                  string `json:"full_name"`
+			Findings, Critical, Major int
+		} `json:"top_repositories"`
+		Series []struct {
 			Day      string `json:"day"`
 			Commits  int    `json:"commits"`
 			Reviewed int    `json:"reviewed"`
@@ -508,6 +513,12 @@ func TestOverview(t *testing.T) {
 	}
 	if o.Sev["critical"] != 1 || o.Sev["major"] != 1 || o.Sev["minor"] != 1 || o.Sev["info"] != 0 {
 		t.Errorf("severity = %+v", o.Sev)
+	}
+	if len(o.Cat) != 1 || o.Cat["bug"] != 3 {
+		t.Errorf("category = %+v", o.Cat)
+	}
+	if len(o.Top) != 1 || o.Top[0].FullName != "acme/api" || o.Top[0].Findings != 3 || o.Top[0].Critical != 1 || o.Top[0].Major != 1 {
+		t.Errorf("top repositories = %+v", o.Top)
 	}
 	if len(o.Series) != 7 {
 		t.Fatalf("series has %d days, want 7 (gaps filled)", len(o.Series))

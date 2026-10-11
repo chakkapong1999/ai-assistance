@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { dateTime, one } from "@/lib/format";
 import FailedAttemptsNote from "@/components/FailedAttemptsNote";
+import AutoRefresh from "@/components/AutoRefresh";
 import ReviewPanel from "@/components/ReviewPanel";
 import { DiffStat, PRStateBadge, StatusBadge } from "@/components/badges";
 import { rereviewPullRequest } from "../actions";
@@ -55,6 +56,7 @@ export default async function PullRequestPage({ params, searchParams }: { params
         <div className="statline">
           <PRStateBadge state={p.state} />
           <StatusBadge status={p.review_status} reason={p.review_skip_reason} />
+          {p.review_status === "pending" || p.review_status === "running" ? <AutoRefresh /> : null}
           {p.review_skip_reason ? <span className="muted">{p.review_skip_reason}</span> : null}
           {p.review_outdated ? <span className="tag warn">The branch has new commits since this review</span> : null}
           <DiffStat files={p.files_changed} additions={p.additions} deletions={p.deletions} />

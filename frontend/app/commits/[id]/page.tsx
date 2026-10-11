@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { dateTime, one } from "@/lib/format";
 import FailedAttemptsNote from "@/components/FailedAttemptsNote";
+import AutoRefresh from "@/components/AutoRefresh";
 import ReviewPanel from "@/components/ReviewPanel";
 import { DiffStat, StatusBadge } from "@/components/badges";
 import { rereview } from "../actions";
@@ -50,6 +51,7 @@ export default async function CommitPage({ params, searchParams }: { params: Pro
         </div>
         <div className="statline">
           <StatusBadge status={c.review_status} reason={c.review_skip_reason} />
+          {c.review_status === "pending" || c.review_status === "running" ? <AutoRefresh /> : null}
           {c.review_skip_reason ? <span className="muted">{c.review_skip_reason}</span> : null}
           <DiffStat files={c.files_changed} additions={c.additions} deletions={c.deletions} />
           {admin && !c.is_merge ? (

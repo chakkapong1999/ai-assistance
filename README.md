@@ -127,7 +127,7 @@ Next.js (server components, no client-side data fetching): the browser only rece
 
 | Page | Shows |
 | --- | --- |
-| `/` Overview | commits, average score, review cost and tokens (failed and retried attempts included, shown separately), queue, findings by severity, per-day charts (7 / 30 / 90 days) |
+| `/` Overview | commits, average score, review cost and tokens (failed and retried attempts included, shown separately), queue, findings by severity and by kind, the repositories with the worst findings, per-day charts (7 / 30 / 90 days) |
 | `/commits` | every commit, newest first, filter by text, repository, status, branch, author; older pages via cursor |
 | `/commits/{id}` | latest review: summary, findings by severity, suggested changes as diffs, tokens and cost of the run; **Review again** (admin token) |
 | `/pull-requests`, `/pull-requests/{id}` | pull requests with the review of their whole diff, state (open / merged / ...), an "outdated" hint when the branch has new commits; **Review again** (admin token, open PRs only) |
@@ -138,6 +138,8 @@ Next.js (server components, no client-side data fetching): the browser only rece
 cd frontend && cp .env.example .env.local   # API_BASE_URL, API_TOKEN (one of the API's API_TOKENS), DISPLAY_TZ
 npm ci && npm run dev
 ```
+
+Pages update themselves while a review is waiting or running (commit and pull request pages every 5 s, the overview every 15 s while the queue is busy; not in a background tab). When signed in, *My work* in the top bar shows how many things are waiting for you.
 
 A viewer token makes the whole dashboard read-only (the buttons disappear and e-mails are hidden). People who need to act sign in with their own token (see "Fix workflow"); everyone else acts with the shared `API_TOKEN`, so **anyone who can open the dashboard has that token's role**. Make it a viewer token outside local use.
 

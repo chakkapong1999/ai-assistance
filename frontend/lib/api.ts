@@ -85,6 +85,10 @@ export type Overview = {
   series: { day: string; commits: number; reviewed: number; avg_score: number | null; cost_usd: number }[];
   /** Fix workflow of the latest reviews of the commits in the window. */
   fix: { open_findings: number; fixed_findings: number; reviews_ready_to_close: number; reviews_closed: number };
+  /** The same findings by category; only categories that occur. */
+  findings_by_category: Record<string, number>;
+  /** At most 5 repositories, most critical first. */
+  top_repositories: { id: number; full_name: string; findings: number; critical: number; major: number }[];
 };
 
 export type Health = {
