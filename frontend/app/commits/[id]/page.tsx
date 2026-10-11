@@ -71,7 +71,7 @@ export default async function CommitPage({ params, searchParams }: { params: Pro
         <div className="empty" style={{ marginTop: 24 }}>
           <strong>{c.review_status === "pending" || c.review_status === "running" ? "Waiting for the review" : "No review for this commit"}</strong>
           {c.review_status === "pending" || c.review_status === "running"
-            ? "Refresh in a minute. The review appears here when the reviewer is done."
+            ? "This page updates by itself. The review appears here when the reviewer is done."
             : c.review_skip_reason ?? (admin ? "Use Review again to queue one." : "Ask an admin to queue one.")}
         </div>
       ) : (

@@ -289,6 +289,15 @@ export const api = {
   health: () => call<Health>("/health"),
   overview: (days: number) => call<Overview>(`/overview${qs({ days })}`),
   repositories: (p: Record<string, string | number | undefined> = {}) => call<Page<Repository>>(`/repositories${qs(p)}`),
+  // Every repository, 200 (the API's page limit) per request, for filter dropdowns.
+  allRepositories: async () => {
+    const items: Repository[] = [];
+    for (;;) {
+      const p = await call<Page<Repository>>(`/repositories${qs({ limit: 200, offset: items.length })}`);
+      items.push(...p.items);
+      if (p.items.length === 0 || items.length >= p.total) return { items, total: p.total };
+    }
+  },
   setReviewEnabled: (id: number, enabled: boolean) =>
     call<Repository>(`/repositories/${id}`, { method: "PATCH", body: JSON.stringify({ review_enabled: enabled }) }),
   commits: (p: Record<string, string | number | undefined>) =>

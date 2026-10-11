@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { intParam, num, one } from "@/lib/format";
@@ -6,6 +7,7 @@ import Score from "@/components/Score";
 import { Parts } from "@/components/badges";
 import Segments from "@/components/Segments";
 import Window from "@/components/Window";
+import Pager, { DEFAULT_SIZE, paging } from "@/components/Pager";
 
 export const metadata = { title: "People" };
 
@@ -20,9 +22,11 @@ export default async function Users({ searchParams }: { searchParams: Promise<Re
   const days = intParam(sp.days, 30, 1, 365);
   const q = one(sp.q);
   const sort = sorts.some(([k]) => k === one(sp.sort)) ? one(sp.sort) : "commits";
-  const [list, problem] = await guard(api.users({ days, q, sort, limit: 200 }));
+  const { page, size } = paging(one(sp.page), one(sp.size));
+  const [list, problem] = await guard(api.users({ days, q, sort, offset: (page - 1) * size, limit: size }));
   if (!list) return problem;
   const keep = { days: String(days), ...(q ? { q } : {}) };
+  if (list.items.length === 0 && page > 1 && list.total > 0) redirect(`/users?${new URLSearchParams({ ...keep, sort, page: String(Math.ceil(list.total / size)), ...(size !== DEFAULT_SIZE ? { size: String(size) } : {}) })}`);
 
   return (
     <>
@@ -34,6 +38,7 @@ export default async function Users({ searchParams }: { searchParams: Promise<Re
       <form className="toolbar" action="/users">
         <input type="hidden" name="days" value={days} />
         <input type="hidden" name="sort" value={sort} />
+        {size !== DEFAULT_SIZE ? <input type="hidden" name="size" value={size} /> : null}
         <label>
           Search
           <input type="search" name="q" defaultValue={q} placeholder="Name" />
@@ -73,9 +78,7 @@ export default async function Users({ searchParams }: { searchParams: Promise<Re
           ))}
         </ul>
       )}
-      <div className="pager">
-        <span>{list.total} people in total</span>
-      </div>
+      <Pager base="/users" keep={{ ...keep, sort }} page={page} size={size} total={list.total} noun="people" />
     </>
   );
 }
