@@ -416,7 +416,12 @@ func (m *Mock) Handler() http.Handler {
 				}
 			}
 		}
-		sort.SliceStable(prs, func(i, j int) bool { return prs[i].updated.After(prs[j].updated) }) // sort=-updated_on
+		sort.Slice(prs, func(i, j int) bool { // sort=-updated_on; ties (same clock tick) newest id first
+			if !prs[i].updated.Equal(prs[j].updated) {
+				return prs[i].updated.After(prs[j].updated)
+			}
+			return prs[i].id > prs[j].id
+		})
 		var vals []any
 		for _, pr := range prs {
 			vals = append(vals, m.prJSON(rp, pr))

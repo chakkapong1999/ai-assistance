@@ -4,7 +4,8 @@ AI code review platform: receives Bitbucket webhooks for every commit, reviews t
 
 - `backend/`  Go (API + worker)
 - `frontend/` Next.js dashboard
-- `api/`      OpenAPI contract shared by both
+
+The API contract both sides use is `backend/internal/restapi/openapi.yaml` (see "REST API" below).
 
 Work is delivered milestone by milestone (M0 to M7), one PR each.
 
@@ -31,12 +32,10 @@ Integration tests that need Postgres run only when `TEST_DATABASE_URL` is set
    even when `REVIEWER_MODE=mock`; mock only replaces the LLM) and `BITBUCKET_WEBHOOK_SECRET` to the secret
    configured on the Bitbucket webhook.
 2. Start the api and the worker (`docker compose up -d --build`, or `make run-api` / `make run-worker`).
-3. Push to a repo that has the webhook. The repo and its commits appear in the database, but nothing is reviewed
-   yet: **repositories start with `review_enabled = false`** (code is sent to an LLM, so it is opt-in). Commits are
-   recorded as `skipped` with the reason `repo review disabled`.
-4. Opt a repo in (until the dashboard has a toggle):
-   `UPDATE repositories SET review_enabled = true WHERE slug = 'my-repo';`
-   Commits pushed from then on are reviewed, one at a time.
+3. Push to a repo that has the webhook. The repo and its commits appear in the database and are reviewed, one at
+   a time: **new repositories start with review on** (see "Which repositories are reviewed"). Set
+   `REVIEW_NEW_REPOS=false` on the worker to make them start off; their commits are then recorded as `skipped`
+   with the reason `repo review disabled` until an admin switches the repository on under `/repositories`.
 
 Commit states: `pending` -> `running` -> `done` | `skipped` (with `review_skip_reason`) | `failed`. A commit shows
 `failed` only after its last retry; usage limits and rate limits reschedule the job instead of failing it.
@@ -59,9 +58,8 @@ BITBUCKET_WEBHOOK_SECRET=dev-secret DATABASE_URL=... go run ./cmd/server --mode=
 scripts/send-webhook.sh                      # WEBHOOK_URL / WEBHOOK_SECRET / FRESH=0 to tweak
 ```
 
-The first push is recorded but skipped (`repo review disabled`); run
-`UPDATE repositories SET review_enabled = true;`, send again, and the new commit is reviewed
-(`mock` model, 2 findings, one with a suggestion diff). Use your own payload by passing a file; use
+The pushed commit is reviewed (`mock` model, 2 findings, one with a suggestion diff); with
+`REVIEW_NEW_REPOS=false` it is skipped (`repo review disabled`) instead. Use your own payload by passing a file; use
 `MOCK_REVIEW_SCENARIO=clean|findings|invalid_json|usage_limit|timeout` to see each outcome.
 `BITBUCKET_BASE_URL` sends the token to that URL, so leave it unset for real use.
 
@@ -134,15 +132,14 @@ Next.js (server components, no client-side data fetching): the browser only rece
 | `/commits/{id}` | latest review: summary, findings by severity, suggested changes as diffs, tokens and cost of the run; **Review again** (admin token) |
 | `/pull-requests`, `/pull-requests/{id}` | pull requests with the review of their whole diff, state (open / merged / ...), an "outdated" hint when the branch has new commits; **Review again** (admin token, open PRs only) |
 | `/repositories` | per-repository numbers and the **review on/off** switch (admin token) |
-| `/people`, `/users/{id}` | commits, average score, findings per author, weekly trend |
+| `/users`, `/users/{id}` | commits, average score, findings per author, weekly trend |
 
 ```bash
 cd frontend && cp .env.example .env.local   # API_BASE_URL, API_TOKEN (one of the API's API_TOKENS), DISPLAY_TZ
 npm ci && npm run dev
 ```
 
-A viewer token makes the whole dashboard read-only (the buttons disappear and e-mails are hidden); an admin token enables the two actions.
-Remember that **anyone who can open the dashboard acts with its token** - there is no per-user login yet.
+A viewer token makes the whole dashboard read-only (the buttons disappear and e-mails are hidden). People who need to act sign in with their own token (see "Fix workflow"); everyone else acts with the shared `API_TOKEN`, so **anyone who can open the dashboard has that token's role**. Make it a viewer token outside local use.
 
 ## Which repositories are reviewed
 

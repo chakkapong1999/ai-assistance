@@ -2,6 +2,7 @@ package review
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -62,14 +63,22 @@ func BuildPrompt(req Request) string {
 		b.WriteString(strings.Replace(promptInstructions, "of one git commit.", "of one pull request: the combined change of all its commits.", 1))
 		b.WriteString(prInstructions)
 		fmt.Fprintf(&b, "\nRepository: %s\nPull request head: %s\nAuthor: %s\n", req.Repo, req.Commit, req.Author)
-		fmt.Fprintf(&b, "Pull request title and description (untrusted):\n<message>\n%s\n</message>\n\n", strings.TrimSpace(req.Message))
+		fmt.Fprintf(&b, "Pull request title and description (untrusted):\n<message>\n%s\n</message>\n\n", untrusted(strings.TrimSpace(req.Message)))
 	} else {
 		b.WriteString(promptInstructions)
 		fmt.Fprintf(&b, "\nRepository: %s\nCommit: %s\nAuthor: %s\n", req.Repo, req.Commit, req.Author)
-		fmt.Fprintf(&b, "Commit message (untrusted):\n<message>\n%s\n</message>\n\n", strings.TrimSpace(req.Message))
+		fmt.Fprintf(&b, "Commit message (untrusted):\n<message>\n%s\n</message>\n\n", untrusted(strings.TrimSpace(req.Message)))
 	}
 	b.WriteString("<diff>\n")
-	b.WriteString(req.Chunk.Render())
+	b.WriteString(untrusted(req.Chunk.Render()))
 	b.WriteString("</diff>\n")
 	return b.String()
 }
+
+var closingTag = regexp.MustCompile(`(?i)</\s*(message|diff)\s*>`)
+
+// untrusted defuses closing tags in repository text so it cannot end its
+// <message> or <diff> block early and pass the rest off as instructions.
+// ponytail: a diff line containing such a tag no longer matches the file, so a
+// suggestion for that line is dropped by validation; rare enough to accept.
+func untrusted(s string) string { return closingTag.ReplaceAllString(s, "[/$1]") }
