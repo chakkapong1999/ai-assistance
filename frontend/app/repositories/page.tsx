@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { api } from "@/lib/api";
 import { guard } from "@/lib/guard";
 import { ago, num, one } from "@/lib/format";
 import Segments from "@/components/Segments";
 import Score from "@/components/Score";
 import { Parts } from "@/components/badges";
+import Pager, { DEFAULT_SIZE, paging } from "@/components/Pager";
 import { toggleReview } from "./actions";
 
 export const metadata = { title: "Repositories" };
@@ -15,10 +17,17 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
   const notice = one(sp.notice);
   const on = one(sp.review_enabled);
   const keep = Object.fromEntries(Object.entries({ q, review_enabled: on }).filter(([, v]) => v)) as Record<string, string>;
-  const [[list, problem], [me]] = await Promise.all([guard(api.repositories({ q, review_enabled: on, limit: 200 })), guard(api.me())]);
+  const { page, size } = paging(one(sp.page), one(sp.size));
+  // limit 1: only the totals are needed, so the sentence stays right under any filter or page.
+  const [[list, problem], [me], [all], [reviewed]] = await Promise.all([
+    guard(api.repositories({ q, review_enabled: on, offset: (page - 1) * size, limit: size })),
+    guard(api.me()),
+    guard(api.repositories({ limit: 1 })),
+    guard(api.repositories({ review_enabled: "true", limit: 1 })),
+  ]);
   if (!list) return problem;
+  if (list.items.length === 0 && page > 1 && list.total > 0) redirect(`/repositories?${new URLSearchParams({ ...keep, page: String(Math.ceil(list.total / size)), ...(size !== DEFAULT_SIZE ? { size: String(size) } : {}) })}`);
   const admin = me?.role === "admin";
-  const enabled = list.items.filter((r) => r.review_enabled).length;
 
   return (
     <>
@@ -26,8 +35,8 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
         <h1>Repositories</h1>
       </div>
       <p className="intro">
-            {enabled} of {list.total} are reviewed. Turning review on sends that repository&apos;s code to the reviewer. Turning it off keeps past reviews, and commits pushed while it is off are
-            skipped for good.
+        {all && reviewed ? `${num(reviewed.total)} of ${num(all.total)} are reviewed. ` : null}Turning review on sends that repository&apos;s code to the reviewer. Turning it off keeps past reviews,
+        and commits pushed while it is off are skipped for good.
       </p>
       {notice ? (
         <p className="banner" role="status">
@@ -35,6 +44,7 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
         </p>
       ) : null}
       <form className="toolbar" action="/repositories">
+        {size !== DEFAULT_SIZE ? <input type="hidden" name="size" value={size} /> : null}
         <Segments
           base="/repositories"
           param="review_enabled"
@@ -102,6 +112,7 @@ export default async function Repositories({ searchParams }: { searchParams: Pro
           ))}
         </ul>
       )}
+      <Pager base="/repositories" keep={keep} page={page} size={size} total={list.total} noun="repositories" />
     </>
   );
 }

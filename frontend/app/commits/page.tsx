@@ -6,6 +6,7 @@ import { ago, dateTime, one } from "@/lib/format";
 import Score from "@/components/Score";
 import Pager, { DEFAULT_SIZE, paging } from "@/components/Pager";
 import Segments from "@/components/Segments";
+import AutoRefresh from "@/components/AutoRefresh";
 import { DiffStat, FixMark, StatusBadge } from "@/components/badges";
 
 export const metadata = { title: "Commits" };
@@ -18,7 +19,7 @@ export default async function Commits({ searchParams }: { searchParams: Promise<
   const f = Object.fromEntries(keys.map((k) => [k, one(sp[k])])) as Record<(typeof keys)[number], string>;
   const { page, size } = paging(one(sp.page), one(sp.size));
 
-  const [[list, p1], [repos, p2]] = await Promise.all([guard(api.commits({ ...f, offset: (page - 1) * size, limit: size })), guard(api.repositories({ limit: 200 }))]);
+  const [[list, p1], [repos, p2]] = await Promise.all([guard(api.commits({ ...f, offset: (page - 1) * size, limit: size })), guard(api.allRepositories())]);
   if (!list || !repos) return p1 ?? p2;
 
   const author = f.author_id ? (await guard(api.user(Number(f.author_id), 1)))[0] : null;
@@ -30,6 +31,7 @@ export default async function Commits({ searchParams }: { searchParams: Promise<
     <>
       <div className="head">
         <h1>Commits</h1>
+        {list.items.some((c) => c.review_status === "pending" || c.review_status === "running") ? <AutoRefresh seconds={15} /> : null}
       </div>
       <p className="intro">Every branch, newest first. Open a commit to read the review next to the code.</p>
 

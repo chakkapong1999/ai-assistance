@@ -6,6 +6,7 @@ import { ago, dateTime, one } from "@/lib/format";
 import Score from "@/components/Score";
 import Pager, { DEFAULT_SIZE, paging } from "@/components/Pager";
 import Segments from "@/components/Segments";
+import AutoRefresh from "@/components/AutoRefresh";
 import { DiffStat, FixMark, PRStateBadge, StatusBadge } from "@/components/badges";
 
 export const metadata = { title: "Pull requests" };
@@ -18,7 +19,7 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
   const f = Object.fromEntries(keys.map((k) => [k, one(sp[k])])) as Record<(typeof keys)[number], string>;
   const { page, size } = paging(one(sp.page), one(sp.size));
 
-  const [[list, p1], [repos, p2]] = await Promise.all([guard(api.pullRequests({ ...f, offset: (page - 1) * size, limit: size })), guard(api.repositories({ limit: 200 }))]);
+  const [[list, p1], [repos, p2]] = await Promise.all([guard(api.pullRequests({ ...f, offset: (page - 1) * size, limit: size })), guard(api.allRepositories())]);
   if (!list || !repos) return p1 ?? p2;
 
   const author = f.author_id ? (await guard(api.user(Number(f.author_id), 1)))[0] : null;
@@ -30,6 +31,7 @@ export default async function PullRequests({ searchParams }: { searchParams: Pro
     <>
       <div className="head">
         <h1>Pull requests</h1>
+        {list.items.some((p) => p.review_status === "pending" || p.review_status === "running") ? <AutoRefresh seconds={15} /> : null}
       </div>
       <p className="intro">Each pull request is reviewed as one diff, and again whenever its branch gets a new commit.</p>
 

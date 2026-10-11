@@ -14,9 +14,12 @@ const sevs: Severity[] = ["critical", "major", "minor", "info"];
 
 export default async function Overview({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const days = intParam((await searchParams).days, 30, 1, 365);
+  // Same window as /overview: whole UTC days, today included.
+  const now = new Date();
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1))).toISOString();
   const [[o, problem], [failedCommits], [failedPRs], [recent], [health]] = await Promise.all([
     guard(api.overview(days)),
-    guard(api.commits({ status: "failed", limit: 5 })),
+    guard(api.commits({ status: "failed", since, limit: 5 })),
     guard(api.pullRequests({ review_status: "failed", limit: 5 })),
     guard(api.commits({ status: "done", limit: 6 })),
     guard(api.health()),
@@ -117,14 +120,18 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </section>
       ) : null}
 
-      {failed > 0 || waiting > 0 || o.queue_waiting + o.queue_running > 0 ? (
+      {failed > 0 || attention.length > 0 || waiting > 0 || o.queue_waiting + o.queue_running > 0 ? (
         <section className="section" aria-labelledby="attn">
           <header>
-            <h2 id="attn">{failed > 0 ? "Needs attention" : "In progress"}</h2>
+            <h2 id="attn">{failed > 0 || attention.length > 0 ? "Needs attention" : "In progress"}</h2>
             <p>
-              {failed > 0 ? <Link href="/commits?status=failed">{num(failed)} failed commits</Link> : null}
-              {failed > 0 && waiting > 0 ? ", " : null}
-              {waiting > 0 ? <Link href="/commits?status=pending">{num(waiting)} waiting or running</Link> : null}
+              {[
+                failed > 0 ? <Link key="c" href="/commits?status=failed">{plural(failed, "failed commit")}</Link> : null,
+                failedPRs && failedPRs.total > 0 ? <Link key="p" href="/pull-requests?review_status=failed">{plural(failedPRs.total, "failed pull request")}</Link> : null,
+                waiting > 0 ? <Link key="w" href="/commits?status=pending">{num(waiting)} waiting or running</Link> : null,
+              ]
+                .filter(Boolean)
+                .flatMap((l, i) => (i > 0 ? [", ", l] : [l]))}
             </p>
           </header>
           {attention.length > 0 ? (

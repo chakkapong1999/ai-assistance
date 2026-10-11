@@ -77,7 +77,7 @@ export default async function PullRequestPage({ params, searchParams }: { params
         <div className="empty" style={{ marginTop: 24 }}>
           <strong>{p.review_status === "pending" || p.review_status === "running" ? "Waiting for the review" : "No review for this pull request"}</strong>
           {p.review_status === "pending" || p.review_status === "running"
-            ? "Refresh in a minute. The review appears here when the reviewer is done."
+            ? "This page updates by itself. The review appears here when the reviewer is done."
             : p.review_skip_reason ?? (admin && p.state === "OPEN" ? "Use Review again to queue one." : "Only open pull requests can be reviewed.")}
         </div>
       ) : (
