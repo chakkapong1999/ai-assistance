@@ -1,15 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findingHref, itemHref, itemTitle, sentBackCount } from "../lib/work.ts";
+import { itemHref, itemTitle, sentBackCount } from "../lib/work.ts";
 import type { WorkItem } from "../lib/api";
 
 const item = (over: Partial<WorkItem>): WorkItem =>
   ({ kind: "commit", id: 5, title: "Fix login", number: null, repository: "acme/api", author: null, reviewed_at: "2026-10-10T00:00:00Z", findings: 2, open_findings: [], ...over }) as WorkItem;
 
-test("links go to the commit or pull request, with the finding in view", () => {
+test("links go to the commit or pull request", () => {
   assert.equal(itemHref(item({})), "/commits/5");
-  assert.equal(findingHref(item({}), { id: 9 }), "/commits/5#f-9");
-  assert.equal(findingHref(item({ kind: "pull_request", id: 3 }), { id: 9 }), "/pull-requests/3#f-9");
+  assert.equal(itemHref(item({ kind: "pull_request", id: 3 })), "/pull-requests/3");
 });
 
 test("a pull request title carries its number", () => {
