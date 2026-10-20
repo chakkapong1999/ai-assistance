@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { ApiError, api } from "@/lib/api";
 import { safePath } from "../signin/actions";
 
@@ -27,6 +28,8 @@ async function step(formData: FormData, run: Run, done: string) {
             : e.message
           : e.message;
   }
+  // The inbox list and the top bar count live in layouts; make them read the new state too.
+  revalidatePath("/", "layout");
   const u = new URL(back, "http://local");
   u.searchParams.set("notice", notice);
   redirect(`${u.pathname}${u.search}${anchor}`);

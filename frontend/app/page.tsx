@@ -1,9 +1,9 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { api } from "@/lib/api";
 import type { Severity } from "@/lib/api";
 import { guard } from "@/lib/guard";
-import { ago, compact, intParam, num, usd, plural } from "@/lib/format";
-import BarChart from "@/components/BarChart";
+import { ago, intParam, num, usd, plural } from "@/lib/format";
 import Score from "@/components/Score";
 import Window from "@/components/Window";
 import AutoRefresh from "@/components/AutoRefresh";
@@ -12,74 +12,79 @@ export const metadata = { title: "Overview" };
 
 const sevs: Severity[] = ["critical", "major", "minor", "info"];
 
+type Entry = { key: string; href: string; title: string; where: string; when: string };
+
+// One queue: who it waits for, how many, and the latest few.
+function Queue({ id, title, count, caption, entries, all, tone }: { id: string; title: string; count: number; caption: ReactNode; entries: Entry[]; all?: ReactNode; tone?: string }) {
+  return (
+    <section className="queue" aria-labelledby={id}>
+      <header>
+        <h2 id={id}>{title}</h2>
+        <span className={`n${tone ? ` ${tone}` : ""}`}>{num(count)}</span>
+      </header>
+      <p className="cap">{caption}</p>
+      {entries.length === 0 ? (
+        <p className="none">Nothing here.</p>
+      ) : (
+        <ul>
+          {entries.map((e) => (
+            <li key={e.key}>
+              <Link href={e.href}>
+                <span className="t">{e.title}</span>
+                <span className="sub">
+                  {e.where} · {e.when}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {all ? <p className="all">{all}</p> : null}
+    </section>
+  );
+}
+
+// What needs someone right now. Trends and cost are on Insights.
 export default async function Overview({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const days = intParam((await searchParams).days, 30, 1, 365);
   // Same window as /overview: whole UTC days, today included.
   const now = new Date();
   const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1))).toISOString();
-  const [[o, problem], [failedCommits], [failedPRs], [recent], [health]] = await Promise.all([
+  const [[o, problem], [fc], [fp], [oc], [op], [rc], [rp], [health]] = await Promise.all([
     guard(api.overview(days)),
-    guard(api.commits({ status: "failed", since, limit: 5 })),
-    guard(api.pullRequests({ review_status: "failed", limit: 5 })),
-    guard(api.commits({ status: "done", limit: 6 })),
+    guard(api.commits({ status: "failed", since, limit: 3 })),
+    guard(api.pullRequests({ review_status: "failed", limit: 3 })),
+    guard(api.commits({ fix: "open", since, limit: 3 })),
+    guard(api.pullRequests({ fix: "open", limit: 3 })),
+    guard(api.commits({ fix: "ready", since, limit: 3 })),
+    guard(api.pullRequests({ fix: "ready", limit: 3 })),
     guard(api.health()),
   ]);
   if (!o) return problem;
 
-  const u = o.usage;
   const sev = o.findings_by_severity;
   const totalFindings = sevs.reduce((n, s) => n + sev[s], 0);
-  const failed = o.commits_by_status.failed;
-  const waiting = o.commits_by_status.pending + o.commits_by_status.running;
-  const label = (d: string) => d.slice(5);
-  // ?? : an API older than the dashboard
-  const cats = Object.entries(o.findings_by_category ?? {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const attention = [
-    ...(failedCommits?.items ?? []).map((c) => ({ key: `c${c.id}`, href: `/commits/${c.id}`, title: c.subject || "(no message)", where: c.repository.full_name, kind: "Commit", when: c.committed_at })),
-    ...(failedPRs?.items ?? []).map((p) => ({ key: `p${p.id}`, href: `/pull-requests/${p.id}`, title: p.title || "(no title)", where: `${p.repository.full_name} #${p.number}`, kind: "Pull request", when: p.updated_at })),
-  ];
+  const commit = (c: NonNullable<typeof fc>["items"][number]): Entry => ({ key: `c${c.id}`, href: `/commits/${c.id}`, title: c.subject || "(no message)", where: c.repository.full_name, when: ago(c.committed_at) });
+  const pr = (p: NonNullable<typeof fp>["items"][number]): Entry => ({ key: `p${p.id}`, href: `/pull-requests/${p.id}`, title: p.title || "(no title)", where: `${p.repository.full_name} #${p.number}`, when: ago(p.updated_at) });
+  const both = (a: typeof fc, b: typeof fp) => [...(a?.items ?? []).map(commit), ...(b?.items ?? []).map(pr)];
+  const failedCount = o.commits_by_status.failed + (fp?.total ?? 0);
+  const busy = o.queue_waiting + o.queue_running > 0;
 
   return (
     <>
       <div className="head">
-        <h1>Overview</h1>
-        {o.queue_waiting + o.queue_running > 0 ? <AutoRefresh seconds={15} /> : null}
+        <div>
+          <h1>Overview</h1>
+          <p className="pulse">
+            <span className={`mark ${health?.status === "degraded" ? "bad" : "good"}`}>{health ? (health.status === "ok" ? "Pipeline healthy" : "Pipeline needs a look") : "Pipeline unknown"}</span>
+            <span>
+              {o.queue_running} reviewing, {o.queue_waiting} waiting
+            </span>
+            {busy ? <AutoRefresh seconds={15} /> : null}
+          </p>
+        </div>
         <Window base="/" days={days} />
       </div>
-
-      <section className="hero" aria-label={`Last ${days} days`}>
-        {o.commits === 0 ? (
-          <p>No commits in the last {days} days.</p>
-        ) : (
-          <p>
-            <Link href="/commits">{plural(o.commits, "commit")}</Link> in the last {days} days,{" "}
-            {o.reviewed === 0 ? (
-              "none reviewed yet."
-            ) : (
-              <>
-                <strong>{o.reviewed === o.commits ? "all" : num(o.reviewed)} reviewed</strong>.
-                {o.avg_score !== null ? (
-                  <>
-                    {" "}They average <Score value={o.avg_score} /> with{" "}
-                  </>
-                ) : (
-                  " They have "
-                )}
-                <strong>{totalFindings === 0 ? "no findings" : plural(totalFindings, "finding")}</strong>
-                {sev.critical > 0 ? (
-                  <>
-                    , and <strong className="crit">{num(sev.critical)} critical</strong> {sev.critical === 1 ? "needs" : "need"} fixing.
-                  </>
-                ) : totalFindings > 0 ? (
-                  ", none critical."
-                ) : (
-                  "."
-                )}
-              </>
-            )}
-          </p>
-        )}
-      </section>
 
       {health && health.status === "degraded" ? (
         <section className="banner bad" role="alert" aria-labelledby="pipe">
@@ -92,246 +97,79 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </section>
       ) : null}
 
-      {o.fix.open_findings + o.fix.fixed_findings + o.fix.reviews_ready_to_close + o.fix.reviews_closed > 0 ? (
-        <section className="section" aria-labelledby="fixes">
-          <header>
-            <h2 id="fixes">Fixes</h2>
-            <p>The latest review of each commit in this window.</p>
-          </header>
-          <dl className="tally">
-            <div>
-              <dt>Waiting for the author</dt>
-              <dd>{num(o.fix.open_findings)}</dd>
-              <span>{o.fix.open_findings === 1 ? "finding" : "findings"} still open</span>
-            </div>
-            <div>
-              <dt>Waiting for a reviewer</dt>
-              <dd>{num(o.fix.reviews_ready_to_close)}</dd>
-              <span>
-                {o.fix.reviews_ready_to_close === 1 ? "review" : "reviews"} ready to close ({plural(o.fix.fixed_findings, "fixed finding")})
-              </span>
-            </div>
-            <div>
-              <dt>Closed</dt>
-              <dd>{num(o.fix.reviews_closed)}</dd>
-              <span>{o.fix.reviews_closed === 1 ? "review" : "reviews"}</span>
-            </div>
-          </dl>
-        </section>
-      ) : null}
-
-      {failed > 0 || attention.length > 0 || waiting > 0 || o.queue_waiting + o.queue_running > 0 ? (
-        <section className="section" aria-labelledby="attn">
-          <header>
-            <h2 id="attn">{failed > 0 || attention.length > 0 ? "Needs attention" : "In progress"}</h2>
-            <p>
-              {[
-                failed > 0 ? <Link key="c" href="/commits?status=failed">{plural(failed, "failed commit")}</Link> : null,
-                failedPRs && failedPRs.total > 0 ? <Link key="p" href="/pull-requests?review_status=failed">{plural(failedPRs.total, "failed pull request")}</Link> : null,
-                waiting > 0 ? <Link key="w" href="/commits?status=pending">{num(waiting)} waiting or running</Link> : null,
-              ]
-                .filter(Boolean)
-                .flatMap((l, i) => (i > 0 ? [", ", l] : [l]))}
-            </p>
-          </header>
-          {attention.length > 0 ? (
-            <ul className="rows">
-              <li className="item hd cols-attn" aria-hidden="true">
-                <span>Status</span>
-                <span>Item</span>
-                <span>When</span>
-              </li>
-              {attention.map((a) => (
-                <li key={a.key} className="item cols-attn">
-                  <span className="mark bad">{a.kind} failed</span>
-                  <div>
-                    <Link href={a.href} className="title">
-                      {a.title}
-                    </Link>
-                    <div className="meta">{a.where}</div>
-                  </div>
-                  <time>{ago(a.when)}</time>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
-      ) : null}
-
-      <div className="split section">
-        <section className="block" aria-labelledby="perday">
-          <header style={{ display: "block" }}>
-            <h2 id="perday">Commits per day</h2>
-            <p>Grey is every commit. The coloured part was reviewed: green for a day averaging 90 and up, amber 70 to 89, red below 70.</p>
-          </header>
-          <div className="chartbox">
-            <BarChart
-              title={`Commits per day, last ${days} days`}
-              bars={o.series.map((p) => ({ label: label(p.day), value: p.commits, value2: p.reviewed, score: p.avg_score, tip: `${p.day}: ${p.commits} commits, ${p.reviewed} reviewed${p.avg_score !== null ? `, average score ${p.avg_score}` : ""}` }))}
-            />
-          </div>
-        </section>
-
-        <section className="block" aria-labelledby="sev">
-          <header style={{ display: "block" }}>
-            <h2 id="sev">Findings by severity</h2>
-            <p>From the latest review of each commit.</p>
-          </header>
-          <div>
-            {totalFindings > 0 ? (
-              <div className="stack" role="img" aria-label={sevs.map((s) => `${sev[s]} ${s}`).join(", ")}>
-                {sevs.filter((s) => sev[s] > 0).map((s) => (
-                  <i key={s} className={`tone-${s}`} style={{ flexGrow: sev[s] }} />
-                ))}
-              </div>
-            ) : (
-              <div className="empty">No findings in this window.</div>
-            )}
-            <ul className="legend">
-              {sevs.map((s) => (
-                <li key={s}>
-                  <span className={`sev sev-${s}`}>{s[0].toUpperCase() + s.slice(1)}</span>
-                  <span className="num">{num(sev[s])}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
+      <div className="queues">
+        <Queue
+          id="q-fix"
+          title="Waiting for the author"
+          count={o.fix.open_findings}
+          caption={`${o.fix.open_findings === 1 ? "Finding" : "Findings"} still open, from the latest review of each commit.`}
+          entries={both(oc, op)}
+          all={
+            <>
+              <Link href="/commits?fix=open">Commits</Link> · <Link href="/pull-requests?fix=open">Pull requests</Link>
+            </>
+          }
+        />
+        <Queue
+          id="q-close"
+          title="Waiting for a reviewer"
+          count={o.fix.reviews_ready_to_close}
+          caption={`Every finding is fixed or dismissed (${plural(o.fix.fixed_findings, "fixed finding")}). Someone has to close ${o.fix.reviews_ready_to_close === 1 ? "it" : "them"}.`}
+          entries={both(rc, rp)}
+          all={
+            <>
+              <Link href="/commits?fix=ready">Commits</Link> · <Link href="/pull-requests?fix=ready">Pull requests</Link>
+            </>
+          }
+        />
+        <Queue
+          id="q-fail"
+          title="Review failed"
+          count={failedCount}
+          tone={failedCount > 0 ? "bad" : undefined}
+          caption="An admin can review these again."
+          entries={both(fc, fp)}
+          all={
+            <>
+              <Link href="/commits?status=failed">Commits</Link> · <Link href="/pull-requests?review_status=failed">Pull requests</Link>
+            </>
+          }
+        />
       </div>
 
-      {totalFindings > 0 ? (
-        <div className="split section">
-          <section className="block" aria-labelledby="byrepo">
-            <header style={{ display: "block" }}>
-              <h2 id="byrepo">Where the findings are</h2>
-              <p>Repositories with the most critical, then major findings.</p>
-            </header>
-            <ul className="legend">
-              {(o.top_repositories ?? []).map((r) => (
-                <li key={r.id}>
-                  <Link href={`/commits?repo_id=${r.id}`}>{r.full_name}</Link>
-                  <span className="num">
-                    {r.critical > 0 ? <strong className="crit">{num(r.critical)} critical · </strong> : null}
-                    {r.major > 0 ? `${num(r.major)} major · ` : null}
-                    {plural(r.findings, "finding")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="block" aria-labelledby="bycat">
-            <header style={{ display: "block" }}>
-              <h2 id="bycat">Findings by kind</h2>
-              <p>What the reviewer flagged, from the same reviews.</p>
-            </header>
-            <ul className="legend">
-              {cats.map(([c, n]) => (
-                <li key={c}>
-                  <span>{c[0].toUpperCase() + c.slice(1)}</span>
-                  <span className="num">{num(n)}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </div>
-      ) : null}
-
-      <div className="split section">
-        <section className="block" aria-labelledby="recent">
-          <header>
-            <h2 id="recent">Recent reviews</h2>
-            <Link href="/commits?status=done">All reviewed commits</Link>
-          </header>
-          {!recent || recent.items.length === 0 ? (
-            <div className="empty">
-              <strong>Nothing reviewed yet</strong>
-              Reviews appear here after a commit is pushed to a repository with review turned on.
-            </div>
-          ) : (
-            <ul className="rows">
-              <li className="item hd cols-recent" aria-hidden="true">
-                <span>Score</span>
-                <span>Commit</span>
-                <span>When</span>
-              </li>
-              {recent.items.map((c) => (
-                <li key={c.id} className="item cols-recent">
-                  <Score value={c.score} />
-                  <div>
-                    <Link href={`/commits/${c.id}`} className="title">
-                      {c.subject || "(no message)"}
-                    </Link>
-                    <div className="meta">
-                      <span>{c.repository.full_name}</span>
-                      <span>{c.author.name || "unknown author"}</span>
-                      <span>{plural(c.findings, "finding")}</span>
-                    </div>
-                  </div>
-                  <time>{ago(c.committed_at)}</time>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="block" aria-labelledby="ledger">
-          <header>
-            <h2 id="ledger">Cost and capacity</h2>
-          </header>
+      <section className="section" aria-labelledby="window">
+        <header className="row-head">
+          <h2 id="window">Last {days} days</h2>
+          <Link href={`/insights${days !== 30 ? `?days=${days}` : ""}`}>Charts and cost</Link>
+        </header>
+        <dl className="strip">
           <div>
-            <dl className="ledger">
-              <dt>Review cost</dt>
-              <dd>{usd(u.cost_usd)}</dd>
-              {u.wasted.runs > 0 ? (
-                <>
-                  <dt>Failed attempts</dt>
-                  <dd>
-                    {u.wasted.measured_runs > 0 ? `${usd(u.wasted.cost_usd)} in ` : ""}
-                    {plural(u.wasted.runs, "attempt")}, included above
-                  </dd>
-                </>
-              ) : null}
-              <dt>Cost per run</dt>
-              <dd>{u.avg_cost_usd !== null ? usd(u.avg_cost_usd) : "not measured"}</dd>
-              <dt>Tokens in / out</dt>
-              <dd>
-                {compact(u.tokens_in)} / {compact(u.tokens_out)}
-              </dd>
-              <dt>Review runs</dt>
-              <dd>
-                {num(u.runs)}
-                {u.runs > u.measured_runs ? ` (${num(u.runs - u.measured_runs)} without usage)` : ""}
-              </dd>
-              <dt>Queue</dt>
-              <dd>
-                {o.queue_running} running, {o.queue_waiting} waiting
-              </dd>
-              <dt>Repositories reviewed</dt>
-              <dd>
-                <Link href="/repositories">
-                  {o.enabled_repositories} of {o.total_repositories}
-                </Link>
-              </dd>
-              <dt>Active authors</dt>
-              <dd>{num(o.active_authors)}</dd>
-              {health ? (
-                <>
-                  <dt>Pipeline</dt>
-                  <dd>{health.status === "ok" ? "Healthy" : "Needs a look"}</dd>
-                  <dt>Worker last checked</dt>
-                  <dd>{health.last_reconcile ? ago(health.last_reconcile.at) : "not yet"}</dd>
-                  <dt>Last poll</dt>
-                  <dd>{health.last_poll ? `${ago(health.last_poll.at)}${health.last_poll.ok ? "" : ", failed"}` : "polling is off"}</dd>
-                </>
-              ) : null}
-            </dl>
-            <p className="muted" style={{ marginTop: 16, fontSize: 12.5, maxWidth: "46ch" }}>
-              A commit starts at 100 and loses 15 for each critical, 7 for each major and 2 for each minor finding. Scores of 90 and up show green, 70 to 89 amber, below 70 red.
-            </p>
+            <dt>Commits reviewed</dt>
+            <dd>
+              <Link href="/commits?status=done">{num(o.reviewed)}</Link> <span className="muted">of {num(o.commits)}</span>
+            </dd>
           </div>
-        </section>
-      </div>
+          <div>
+            <dt>Average score</dt>
+            <dd>{o.avg_score !== null ? <Score value={o.avg_score} /> : <span className="muted">none yet</span>}</dd>
+          </div>
+          <div>
+            <dt>Findings</dt>
+            <dd>
+              {num(totalFindings)}
+              {sev.critical > 0 ? <span className="crit"> · {num(sev.critical)} critical</span> : null}
+            </dd>
+          </div>
+          <div>
+            <dt>Reviews closed</dt>
+            <dd>{num(o.fix.reviews_closed)}</dd>
+          </div>
+          <div>
+            <dt>Review cost</dt>
+            <dd>{usd(o.usage.cost_usd)}</dd>
+          </div>
+        </dl>
+      </section>
     </>
   );
 }
