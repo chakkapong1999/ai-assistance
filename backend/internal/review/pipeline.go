@@ -33,6 +33,9 @@ type Outcome struct {
 
 	// Whole-commit stats, counting files that were skipped too.
 	Files, Additions, Deletions int
+
+	// Diff is the whole masked diff, skipped files included, safe for a text column.
+	Diff string
 }
 
 // PromptVersion is stored with every review so scores can be compared across
@@ -59,7 +62,7 @@ func Run(ctx context.Context, rv Reviewer, in Input, lim Limits) (Outcome, error
 	}
 
 	kept, skipped := Filter(files, lim)
-	out := Outcome{Skipped: skipped, Files: len(files)}
+	out := Outcome{Skipped: skipped, Files: len(files), Diff: clean(diff)}
 	for _, f := range files {
 		for _, h := range f.Hunks {
 			for _, l := range h.Lines {

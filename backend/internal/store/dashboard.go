@@ -691,6 +691,9 @@ type Review struct {
 	CreatedAt     time.Time     `json:"created_at"`
 	Closed        *ReviewClosed `json:"closed"`
 	Findings      []Finding     `json:"findings"`
+	// Diff is the whole masked diff the review was made from; null for reviews
+	// made before it was recorded.
+	Diff *string `json:"diff"`
 }
 
 // FailedAttempts is what the review attempts of one commit or pull request
@@ -767,11 +770,11 @@ func (d *Dashboard) latestReviewOf(ctx context.Context, col string, id int64) (*
 	)
 	err := d.pool.QueryRow(ctx, `
 		SELECT r.id, r.model, r.prompt_version, r.score, r.summary, r.duration_ms, r.tokens_in, r.tokens_out, r.cost_usd::float8, r.created_at,
-		       r.closed_at, r.closed_by, cu.display_name, r.close_note
+		       r.closed_at, r.closed_by, cu.display_name, r.close_note, r.diff
 		FROM reviews r LEFT JOIN users cu ON cu.id = r.closed_by
 		WHERE r.`+col+` = $1 ORDER BY r.created_at DESC, r.id DESC LIMIT 1`, id).
 		Scan(&rv.ID, &rv.Model, &rv.PromptVersion, &rv.Score, &rv.Summary, &rv.DurationMs, &rv.TokensIn, &rv.TokensOut, &rv.CostUSD, &rv.CreatedAt,
-			&closedAt, &closedBy, &closedName, &closeNote)
+			&closedAt, &closedBy, &closedName, &closeNote, &rv.Diff)
 	if err != nil {
 		return nil, fmt.Errorf("review: %w", err)
 	}

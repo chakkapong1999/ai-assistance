@@ -295,6 +295,18 @@ svg.chart .tone-none { fill: var(--text-3); }
 .suggest button { height: 28px; font-size: 13px; padding: 0 10px; border-radius: 6px; }
 .nocode { padding: 4px 20px 0; font-size: 13px; color: var(--text-3); }
 @media (max-width: 760px) { .outline { top: 0; } .thread { scroll-margin-top: 16px; } }
+.changes { margin-top: 36px; }
+.change { border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); margin-bottom: 12px; overflow: hidden; }
+.change > summary { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; padding: 10px 16px; cursor: pointer; font-size: 13px; color: var(--text-3); list-style: none; user-select: none; }
+.change > summary::-webkit-details-marker { display: none; }
+.change > summary::before { content: "▸"; color: var(--text-3); transition: transform 120ms ease; }
+.change[open] > summary::before { transform: rotate(90deg); }
+.change > summary:hover { background: var(--sunk); }
+.change > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.change > summary .p { font-family: var(--mono); overflow-wrap: anywhere; margin-right: auto; }
+.change > summary .p b { color: var(--text); font-weight: 600; }
+.change[open] > summary { border-bottom: 1px solid var(--line-soft); }
+.change > .nocode { padding: 10px 16px; }
 
 /* ---------- diff ---------- */
 .code { overflow-x: auto; background: var(--sheet); }

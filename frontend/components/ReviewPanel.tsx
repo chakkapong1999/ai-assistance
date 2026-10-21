@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CommitDetail, Finding, Me, Severity } from "@/lib/api";
+import { splitDiff } from "@/lib/diff";
 import { matches, type FindingFilter } from "@/lib/findings";
 import { dateTime, num, usd } from "@/lib/format";
 import { closeReview, dismiss, markFixed, sendBack } from "@/app/workflow/actions";
@@ -147,6 +148,22 @@ export default function ReviewPanel({
   const closed = r.closed;
   const open = r.findings.filter((f) => f.status === "open").length;
   const counts = order.map((s) => [s, shown.filter((f) => f.severity === s).length] as const).filter(([, n]) => n > 0);
+  const changes = r.diff === null ? null : splitDiff(r.diff);
+  const toggle = (
+    <div className="seg" role="group" aria-label="Code layout">
+      {(["unified", "split"] as const).map((l) =>
+        l === layout ? (
+          <span key={l} aria-current="true">
+            {l === "unified" ? "Unified" : "Split"}
+          </span>
+        ) : (
+          <Link key={l} href={withFilter(hrefFor(l))} scroll={false}>
+            {l === "unified" ? "Unified" : "Split"}
+          </Link>
+        ),
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -222,19 +239,7 @@ export default function ReviewPanel({
               <h2>
                 {filtered ? `${shown.length} of ${r.findings.length}` : r.findings.length} {r.findings.length === 1 ? "finding" : "findings"} in {groups.length} {groups.length === 1 ? "file" : "files"}
               </h2>
-              <div className="seg" role="group" aria-label="Code layout">
-                {(["unified", "split"] as const).map((l) =>
-                  l === layout ? (
-                    <span key={l} aria-current="true">
-                      {l === "unified" ? "Unified" : "Split"}
-                    </span>
-                  ) : (
-                    <Link key={l} href={withFilter(hrefFor(l))} scroll={false}>
-                      {l === "unified" ? "Unified" : "Split"}
-                    </Link>
-                  ),
-                )}
-              </div>
+              {toggle}
             </div>
             <form className="toolbar findfilter" action={path} role="search" aria-label="Filter findings">
               {layout === "split" ? <input type="hidden" name="view" value="split" /> : null}
@@ -363,6 +368,36 @@ export default function ReviewPanel({
           </nav>
         </div>
       )}
+
+      <section className="changes" aria-label="Changes">
+        <div className="viewtoggle">
+          <h2>{changes ? `${changes.length} ${changes.length === 1 ? "file" : "files"} changed` : "Changes"}</h2>
+          {changes?.length ? toggle : null}
+        </div>
+        {changes === null ? (
+          <p className="muted">The changes were not recorded for this older review. Review it again to see them here.</p>
+        ) : (
+          changes.map((c, i) => (
+            // ponytail: every file starts collapsed but is still rendered in full; virtualize if pages get slow
+            <details key={i} className="change">
+              <summary>
+                <span className="p">
+                  <Path path={c.path} />
+                </span>
+                {c.status !== "modified" ? <span>{c.status}</span> : null}
+                <span className="stat">
+                  <span className="a">+{c.additions}</span> <span className="d">−{c.deletions}</span>
+                </span>
+              </summary>
+              {c.text ? (
+                <DiffView text={c.text} layout={layout} hunks label={`Changes in ${c.path}`} />
+              ) : (
+                <p className="nocode">{c.binary ? "Binary file, not shown." : "No line changes."}</p>
+              )}
+            </details>
+          ))
+        )}
+      </section>
     </>
   );
 }

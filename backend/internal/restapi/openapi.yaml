@@ -745,6 +745,10 @@ components:
             by: { allOf: [{ $ref: "#/components/schemas/UserRef" }], nullable: true }
             note: { type: string, nullable: true }
         findings: { type: array, items: { $ref: "#/components/schemas/Finding" } }
+        diff:
+          type: string
+          nullable: true
+          description: The whole unified diff the review was made from, secrets masked, skipped files included. Null for reviews made before this was recorded.
     CommitDetail:
       allOf:
         - { $ref: "#/components/schemas/CommitSummary" }

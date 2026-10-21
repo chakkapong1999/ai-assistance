@@ -85,5 +85,13 @@ func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	if !has {
 		return errors.New("store: the audit log table is missing: run `make migrate` (migration 0007)")
 	}
+	if err := pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		               WHERE table_schema = current_schema() AND table_name = 'reviews' AND column_name = 'diff')`).Scan(&has); err != nil {
+		return fmt.Errorf("store: check reviews: %w", err)
+	}
+	if !has {
+		return errors.New("store: reviews is out of date: run `make migrate` (migration 0008)")
+	}
 	return nil
 }

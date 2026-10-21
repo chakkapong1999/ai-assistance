@@ -215,6 +215,8 @@ export type CommitDetail = CommitSummary & {
     /** Set once a senior, lead or admin closed the review. */
     closed: { at: string; by: { id: number; name: string } | null; note: string | null } | null;
     findings: Finding[];
+    /** The whole diff the review was made from, secrets masked; null for reviews made before it was recorded. */
+    diff: string | null;
   } | null;
 };
 

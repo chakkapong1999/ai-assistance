@@ -448,11 +448,16 @@ func (c *capturingReviewer) Review(_ context.Context, r Request) (Result, error)
 func TestSecretsNeverReachReviewer(t *testing.T) {
 	diff := "diff --git a/c.go b/c.go\n--- a/c.go\n+++ b/c.go\n@@ -1,1 +1,2 @@\n a\n+key := \"AKIAIOSFODNN7EXAMPLE\"\n"
 	cr := &capturingReviewer{}
-	if _, err := Run(context.Background(), cr, Input{Diff: diff, Message: "m"}, Limits{}); err != nil {
+	out, err := Run(context.Background(), cr, Input{Diff: diff, Message: "m"}, Limits{})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(cr.seen) != 1 || strings.Contains(cr.seen[0], "AKIAIOSFODNN7EXAMPLE") || !strings.Contains(cr.seen[0], "[REDACTED]") {
 		t.Fatalf("prompt leaked or unmasked:\n%v", cr.seen)
+	}
+	// The stored diff is shown on the dashboard: it must be the masked one.
+	if strings.Contains(out.Diff, "AKIAIOSFODNN7EXAMPLE") || !strings.Contains(out.Diff, "[REDACTED]") {
+		t.Fatalf("stored diff leaked or unmasked:\n%s", out.Diff)
 	}
 }
 

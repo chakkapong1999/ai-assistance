@@ -205,10 +205,11 @@ type subject struct {
 func insertReviewTx(ctx context.Context, tx pgx.Tx, sub subject, out review.Outcome, took time.Duration) error {
 	var reviewID int64
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO reviews (commit_id, pr_id, pr_head_hash, model, prompt_version, score, summary, duration_ms, tokens_in, tokens_out, cost_usd)
-		VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+		INSERT INTO reviews (commit_id, pr_id, pr_head_hash, model, prompt_version, score, summary, duration_ms, tokens_in, tokens_out, cost_usd, diff)
+		VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9, $10, $11, NULLIF($12, '')) RETURNING id`,
 		sub.commitID, sub.prID, sub.prHead, out.Model, review.PromptVersion, out.Score, out.Summary, took.Milliseconds(),
 		usageVal(out.Usage, out.Usage.InputTokens), usageVal(out.Usage, out.Usage.OutputTokens), usageVal(out.Usage, out.Usage.CostUSD),
+		out.Diff,
 	).Scan(&reviewID); err != nil {
 		return err
 	}
